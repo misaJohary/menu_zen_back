@@ -1,9 +1,18 @@
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
+import uvicorn
 
-from .dependencies import get_query_token, get_token_header
-from .routers import auth, orders, menu
+from .configs.database_configs import create_db_and_tables
+
+from .routers import auth
 
 app = FastAPI()
+
+if __name__ == "__main__":
+    uvicorn.run(app, host=8000)
+
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
 
 
 app.include_router(auth.router)

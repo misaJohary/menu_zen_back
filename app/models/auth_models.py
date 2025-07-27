@@ -1,5 +1,8 @@
-from ..routers.auth import User
+from typing import List, Union
+from sqlmodel import Field, SQLModel
 
+from app.schemas.auth_schemas import Role, User, UserCreate
 
-class UserInDB(User):
-    hashed_password: str
+class UserDB(User, table= True):
+    id: Union[int, None] = Field(default=None, primary_key=True)
+    hashed_psd: str
