@@ -44,8 +44,9 @@ def create_user(user: UserCreate, session: SessionDep):
     session.refresh(db_user)
     return db_user
 
+
+
 @router.get("/users/", response_model=list[UserPublic])
-def get_users(current_user: Annotated[UserPublic, Depends(get_current_active_user)], session: SessionDep, offset: int=0, limit: Annotated[int, Query(le=100)]=100):
+def get_users( session: SessionDep, offset: int=0, limit: Annotated[int, Query(le=100)]=100,current_user = Depends(get_current_active_user)):
     users_db = session.exec(select(UserDB).offset(offset).limit(limit)).scalars().all()
-    print('/////////', current_user)
     return users_db
