@@ -19,15 +19,15 @@ class Role(str, Enum):
     CASHIER= "cashier"
 
 
-class User(SQLModel):
+class UserBase(SQLModel):
     username: str
     email: Union[str, None] = None
     full_name: Union[str, None] = None
     roles: Role
     disabled: bool = True
 
-class UserCreate(User):
+class UserCreate(UserBase):
     password: str
 
-class UserPublic(User):
+class UserPublic(UserBase):
     id: int

@@ -8,11 +8,11 @@ from sqlmodel import Session
 
 from app.configs.auth_configs import settings
 from app.configs.database_configs import engine
-from app.models.auth_models import UserDB
+from app.models.auth_models import User
 
 import jwt
 
-from app.schemas.auth_schemas import TokenData, User, UserPublic
+from app.schemas.auth_schemas import TokenData, UserBase, UserPublic
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -21,9 +21,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
-def get_user(username: str) -> UserDB:
+def get_user(username: str) -> User:
     with Session(engine) as session:
-        result: Result = session.exec(select(UserDB).where(UserDB.username == username))
+        result: Result = session.exec(select(User).where(User.username == username))
         user = result.scalar()
         return user
     

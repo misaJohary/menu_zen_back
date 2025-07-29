@@ -1,8 +1,8 @@
-from typing import List, Union
-from sqlmodel import Field, SQLModel
+from typing import Union
+from sqlmodel import Field
 
-from app.schemas.auth_schemas import Role, User, UserCreate
+from app.schemas.auth_schemas import UserBase
 
-class UserDB(User, table= True):
+class User(UserBase, table= True):
     id: Union[int, None] = Field(default=None, primary_key=True)
     hashed_psd: str

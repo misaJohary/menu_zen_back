@@ -8,9 +8,9 @@ from sqlalchemy import select
 
 from app.configs.auth_configs import settings
 from app.configs.database_configs import SessionDep
-from app.models.auth_models import UserDB
+from app.models.auth_models import User
 from app.services.auth_service import authenticate_user, create_access_token, get_current_active_user, get_password_hash
-from app.schemas.auth_schemas import Token, User, UserCreate, UserPublic
+from app.schemas.auth_schemas import Token, UserBase, UserCreate, UserPublic
 
 router = APIRouter(tags=["users"])
 
@@ -33,9 +33,9 @@ async def login_for_access_token(
     return Token(access_token=access_token, token_type="bearer")
 
 
-@router.post("/user", response_model= UserPublic)
+@router.post("/users", response_model= UserPublic)
 def create_user(user: UserCreate, session: SessionDep):
-    db_user= UserDB(
+    db_user= User(
         **user.model_dump(exclude={'password'}),
         hashed_psd=get_password_hash(user.password)
     )
@@ -48,5 +48,5 @@ def create_user(user: UserCreate, session: SessionDep):
 
 @router.get("/users/", response_model=list[UserPublic])
 def get_users(session: SessionDep, offset: int=0, limit: Annotated[int, Query(le=100)]=100, _= Depends(get_current_active_user)):
-    users_db = session.exec(select(UserDB).offset(offset).limit(limit)).scalars().all()
+    users_db = session.exec(select(User).offset(offset).limit(limit)).scalars().all()
     return users_db
