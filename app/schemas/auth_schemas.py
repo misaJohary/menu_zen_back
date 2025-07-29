@@ -1,8 +1,7 @@
 from enum import Enum
-from typing import List, Optional, Union
+from typing import Union
 from pydantic import BaseModel
-from sqlalchemy import JSON, Column
-from sqlmodel import Field, SQLModel
+from sqlmodel import SQLModel
 
 
 class Token(BaseModel):

@@ -2,10 +2,10 @@ from typing import Union
 from datetime import datetime
 from sqlmodel import Field
 
-from app.schemas.menu_schemas import Menu
+from app.schemas.category_schemas import Category
 
 
-class MenuDB(Menu, table= True):
+class CategoryDB(Category, table= True):
     id: Union[int, None] = Field(default=None, primary_key=True)
     created_at: datetime = datetime.now()
     updated_at: datetime = datetime.now()

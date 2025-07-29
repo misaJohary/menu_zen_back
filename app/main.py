@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 import uvicorn
 
+from app.routers import categories, menu
+
 from .configs.database_configs import create_db_and_tables
 
 from .routers import auth
@@ -16,6 +18,8 @@ def on_startup():
 
 
 app.include_router(auth.router)
+app.include_router(categories.router)
+app.include_router(menu.router)
 
 
 @app.get("/")
