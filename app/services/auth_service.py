@@ -8,10 +8,10 @@ from sqlmodel import Session
 
 from app.configs.auth_configs import settings
 from app.configs.database_configs import engine
-from app.models.auth_models import User
 
 import jwt
 
+from app.models.models import User
 from app.schemas.auth_schemas import TokenData, UserBase, UserPublic
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -27,6 +27,11 @@ def get_user(username: str) -> User:
         user = result.scalar()
         return user
     
+def get_user_by_id(id: int) -> User:
+    with Session(engine) as session:
+        result: Result = session.get(User, id)
+        return result
+    
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     credentials_exception = HTTPException(
         status_code= status.HTTP_401_UNAUTHORIZED,
@@ -34,14 +39,16 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        print("++++++++++++++++", token)
         payload= jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-        username= payload.get("sub")
-        if username is None:
+        user_id= payload.get("sub")
+        print("****************")
+        print(user_id)
+        if user_id is None:
             raise credentials_exception
-        token_data= TokenData(username= username)
     except jwt.InvalidTokenError:
         raise credentials_exception
-    user = get_user(token_data.username)
+    user = get_user(user_id)
     if user is None:
         raise credentials_exception
     return user

@@ -5,8 +5,13 @@ from sqlalchemy import pool
 
 from alembic import context
 from sqlmodel import SQLModel
-from app.models.menu_item_models import MenuDB, CategoryDB
-from app.models.auth_models import UserDB
+from app.models.models import (
+    Category,
+    MenuItem,
+    Restaurant,
+    Menu,
+    User
+)
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

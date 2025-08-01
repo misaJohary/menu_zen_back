@@ -1,7 +1,9 @@
 from enum import Enum
 from typing import Union
 from pydantic import BaseModel
-from sqlmodel import SQLModel
+from sqlmodel import Field, SQLModel
+
+from app.schemas.restaurant_schemas import RestaurantBase, RestaurantPublic
 
 
 class Token(BaseModel):
@@ -26,8 +28,15 @@ class UserBase(SQLModel):
     roles: Role
     disabled: bool = True
 
+    restaurant_id: Union[int, None] = Field(default= None,foreign_key= "restaurant.id")
+
 class UserCreate(UserBase):
     password: str
 
 class UserPublic(UserBase):
     id: int
+
+class UserRestaurant(UserBase):
+    id: int
+    restaurant: RestaurantPublic
+    token: Token

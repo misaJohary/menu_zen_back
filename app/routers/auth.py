@@ -8,9 +8,9 @@ from sqlalchemy import select
 
 from app.configs.auth_configs import settings
 from app.configs.database_configs import SessionDep
-from app.models.auth_models import User
+from app.models.models import User
 from app.services.auth_service import authenticate_user, create_access_token, get_current_active_user, get_password_hash
-from app.schemas.auth_schemas import Token, UserBase, UserCreate, UserPublic
+from app.schemas.auth_schemas import Token, UserCreate, UserPublic
 
 router = APIRouter(tags=["users"])
 
@@ -28,7 +28,7 @@ async def login_for_access_token(
         )
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.username, "restaurant_id": user.restaurant_id, "user_id": user.id}, expires_delta=access_token_expires
     )
     return Token(access_token=access_token, token_type="bearer")
 
