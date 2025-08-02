@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 import uvicorn
 
-from app.routers import categories, menu, menu_items, restaurant
+from app.routers import categories, menu, menu_items, orders, restaurant, restaurant_table
 
 from .configs.database_configs import create_db_and_tables
 
@@ -28,6 +28,8 @@ app.include_router(restaurant.router)
 app.include_router(menu.router)
 app.include_router(categories.router)
 app.include_router(menu_items.router)
+app.include_router(orders.router)
+app.include_router(restaurant_table.router)
 
 
 @app.get("/")

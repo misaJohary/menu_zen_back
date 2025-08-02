@@ -3,6 +3,7 @@ from sqlalchemy import JSON
 from sqlmodel import Column, Field, SQLModel
 
 
+
 class MenuItemBase(SQLModel):
     name: str = Field(index=True)
     description: Optional[str]= None
