@@ -39,10 +39,11 @@ class OrderPublic(OrderBase):
     menu_items: list[MenuItemPublic]
     r_table: RestaurantTablePublic
 
-
 class OrderCreate(OrderBase):
     menu_items: List[OrderMenuItemCreate]
 
+class OrderFullPublic(OrderCreate):
+    id: int
 
 class OrderUpdate(OrderBase):
     restaurant_table_id: Optional[int]= Field(default=None, foreign_key= "restaurant_table.id")

@@ -1,11 +1,12 @@
 from datetime import timedelta
-from fastapi import APIRouter
+from typing import Annotated
+from fastapi import APIRouter, Depends
 
 from app.configs.database_configs import SessionDep
 from app.models.models import Restaurant, User
 from app.schemas.auth_schemas import Token, UserCreate, UserPublic, UserRestaurant
 from app.schemas.restaurant_schemas import RestaurantCreate
-from app.services.auth_service import create_access_token, get_password_hash
+from app.services.auth_service import create_access_token, get_current_active_user, get_password_hash
 
 from app.configs.auth_configs import settings
 
@@ -34,4 +35,4 @@ def create_restaurant(restaurant: RestaurantCreate, user: UserCreate, session: S
         data={"sub": db_user.id, "restaurant_id": db_restaurant.id}, expires_delta=access_token_expires
     )
 
-    return UserRestaurant(**db_user.model_dump(), restaurant=db_user.restaurant, token=Token(access_token=access_token, token_type="bearer"))
+    return UserRestaurant(user=db_user.model_dump(), restaurant=db_user.restaurant, token=Token(access_token=access_token, token_type="bearer"))

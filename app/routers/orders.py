@@ -66,7 +66,7 @@ def change_order_status(order_id: int, session: SessionDep, payment_status: Paym
 
 @router.get("/orders", response_model=List[OrderPublic])
 def read_user_orders(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
-    if current_user.roles is Role.ADMIN:
-        return session.exec(select(Order).where(Order.server.restaurant_id == current_user.restaurant_id)).all()
+    #if current_user.roles is Role.ADMIN:
+        #return session.exec(select(Order).where(Order.server.restaurant_id == current_user.restaurant_id)).all()
     orders = session.exec(select(Order).where(Order.server_id == current_user.id)).all()
     return orders

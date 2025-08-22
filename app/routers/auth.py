@@ -4,13 +4,14 @@ from typing import Annotated
 
 
 from fastapi import Depends, HTTPException, Query, status, APIRouter
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.configs.auth_configs import settings
 from app.configs.database_configs import SessionDep
-from app.models.models import User
+from app.models.models import Restaurant, User
 from app.services.auth_service import authenticate_user, create_access_token, get_current_active_user, get_password_hash
-from app.schemas.auth_schemas import Token, UserCreate, UserPublic
+from app.schemas.auth_schemas import Token, UserCreate, UserPublic, UserRestaurant
 
 router = APIRouter(tags=["users"])
 
@@ -26,9 +27,9 @@ async def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    #access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
-        data={"sub": user.username, "restaurant_id": user.restaurant_id, "user_id": user.id}, expires_delta=access_token_expires
+        data={"sub": user.username, "restaurant_id": user.restaurant_id, "user_id": user.id}
     )
     return Token(access_token=access_token, token_type="bearer")
 
@@ -43,6 +44,12 @@ def create_user(user: UserCreate, session: SessionDep):
     session.commit()
     session.refresh(db_user)
     return db_user
+
+@router.get("/user", response_model= UserRestaurant)
+def get_user_restaurant(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
+    db_restaurant = session.get(Restaurant, current_user.restaurant_id)
+    db_user = session.get(User, current_user.id)
+    return UserRestaurant(user=db_user.model_dump(), restaurant=db_restaurant.model_dump())
 
 
 

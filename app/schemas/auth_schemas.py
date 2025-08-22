@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Union
+from typing import Optional, Union
 from pydantic import BaseModel
 from sqlmodel import Field, SQLModel
 
@@ -36,7 +36,7 @@ class UserCreate(UserBase):
 class UserPublic(UserBase):
     id: int
 
-class UserRestaurant(UserBase):
-    id: int
+class UserRestaurant(SQLModel):
+    user: UserPublic
     restaurant: RestaurantPublic
-    token: Token
+    token: Optional[Token]= None

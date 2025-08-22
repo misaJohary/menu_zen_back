@@ -5,7 +5,10 @@ from sqlmodel import Field, SQLModel
 class CategoryBase(SQLModel):
     name: str = Field(max_length=50, index=True)
     description: Optional[str]= Field(default= None, max_length=500, index=True)
-    menu_id: Union[int, None]= Field(default= None, foreign_key="menu.id")
+    #menu_id: Union[int, None]= Field(default= None, foreign_key="menu.id")
+    color: Union[str, None]= None
+
+    restaurant_id: Union[int, None]= Field(default=None, foreign_key= "restaurant.id")
 class CategoryCreate(CategoryBase):
     pass
 

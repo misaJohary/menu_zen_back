@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from app.routers import categories, menu, menu_items, orders, restaurant, restaurant_table
@@ -18,6 +19,8 @@ async def lifespan(app: FastAPI):
     print("Application shutting down...")
 
 app = FastAPI(lifespan=lifespan)
+
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 if __name__ == "__main__":
     uvicorn.run(app, host=8000)

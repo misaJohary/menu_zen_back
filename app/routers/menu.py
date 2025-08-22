@@ -20,8 +20,8 @@ def create_menu(menu: MenuCreate, session: SessionDep, current_user: Annotated[U
 
 
 @router.get("/menus")
-def read_menus(session: SessionDep):
-    menu_db = session.exec(select(Menu)).all()
+def read_menus(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
+    menu_db = session.exec(select(Menu).where(Menu.restaurant_id == current_user.restaurant_id)).all()
     return menu_db
 
 @router.get("/restaurants/{restaurant_id}/menus")
@@ -36,10 +36,6 @@ def update_menu(menu_id: int, menu: MenuUpdate, session: SessionDep):
     if not menu_db:
         raise HTTPException(status_code=404, detail="Menu not found")
     menu_data = menu.model_dump(exclude_unset= True)
-    if menu_data["restaurant_id"]:
-        restaurant = session.get(Restaurant, menu_data["restaurant_id"])
-        if not restaurant:
-            raise HTTPException(status_code=400, detail="Restaurant not found") 
 
     menu_db.sqlmodel_update(menu_data)
     session.add(menu_db)
@@ -55,7 +51,7 @@ def read_menu(menu_id: int, session: SessionDep) -> MenuBase:
     return menu
 
 
-@router.delete("/menus/{menu_item_id}")
+@router.delete("/menus/{menu_id}")
 def delete_menu(menu_id: int, session: SessionDep):
     menu= session.get(Menu, menu_id)
     if not menu:
