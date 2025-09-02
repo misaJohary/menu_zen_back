@@ -52,7 +52,7 @@ def read_menu_item(menu_item_id: int, session: SessionDep) -> MenuItemPublic:
         raise HTTPException(status_code=404, detail="Menu item not found")
     return menu
 
-@router.get("/menu-items", response_model= List[MenuItemPublic])
+@router.get("/menu-items", response_model= List[MenuItemPublic], deprecated= True)
 def read_menus_item(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     statement = (
         select(MenuItem)

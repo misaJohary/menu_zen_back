@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Union
 from datetime import datetime
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -12,14 +12,14 @@ from app.schemas.restaurant_schemas import RestaurantBase
 from app.schemas.restaurant_table_schemas import RestaurantTableBase
 
 
-
-class OrderMenuItemLink(OrderMenuItemBase, table= True):
-    order_id: Union[int, None]= Field(default= None, foreign_key= "order.id", primary_key= True)
-    menu_item_id: Union[int, None]= Field(default= None, foreign_key= "menu_item.id", primary_key= True)
-
 class MenuAndMenuItemLink(SQLModel,table= True):
     menu_id: Union[int, None]= Field(default= None, foreign_key= "menu.id", primary_key= True)
     menu_item_id: Union[int, None]= Field(default= None, foreign_key= "menu_item.id", primary_key= True)
+
+class OrderMenuItem(OrderMenuItemBase, table= True):
+    id: Union[int, None] = Field(default=None, primary_key=True)
+    menu_item: Union["MenuItem", None] = Relationship(back_populates="order_menu_items")
+    order: Union["Order", None]= Relationship(back_populates="order_menu_items")
 
 class MenuItem(MenuItemBase, table=True):
     __tablename__ = "menu_item"
@@ -32,8 +32,10 @@ class MenuItem(MenuItemBase, table=True):
     category: Union["Category", None] = Relationship(back_populates="menu_items")
 
     restaurant: Union["Restaurant", None] = Relationship(back_populates="menu_items")
-    orders: Union[list['Order'], None] = Relationship(back_populates= "menu_items", link_model= OrderMenuItemLink)
-    menus: Union[list['Menu'], None] = Relationship(back_populates= "menu_items", link_model= MenuAndMenuItemLink)
+    order_menu_items: Union[List[OrderMenuItem], None]= Relationship(back_populates="menu_item")
+
+    #orders: Union[list['Order'], None] = Relationship(back_populates= "menu_items", link_model= OrderMenuItemLink)
+    menus: Union[List['Menu'], None] = Relationship(back_populates= "menu_items", link_model= MenuAndMenuItemLink)
 
 class Restaurant(RestaurantBase, table= True):
     id: Union[int, None] = Field(default=None, primary_key=True)
@@ -62,7 +64,7 @@ class Menu(MenuBase, table= True):
     updated_at: datetime = datetime.now()
     #categories: Union[List["Category"], None]= Relationship(back_populates= "menu")
     restaurant: Restaurant = Relationship(back_populates= "menus")
-    menu_items: Union[list['MenuItem'], None] = Relationship(back_populates= "menus", link_model= MenuAndMenuItemLink)
+    menu_items: Union[List['MenuItem'], None] = Relationship(back_populates= "menus", link_model= MenuAndMenuItemLink)
 
 class User(UserBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
@@ -89,5 +91,5 @@ class Order(OrderBase, table= True):
     updated_at: datetime = datetime.now()
 
     r_table: RestaurantTable= Relationship(back_populates= "orders")
-    menu_items: list[MenuItem]= Relationship(back_populates= "orders", link_model= OrderMenuItemLink)
     server: Union[User, None]= Relationship(back_populates="orders")
+    order_menu_items: Union[List[OrderMenuItem], None]= Relationship(back_populates="order")
