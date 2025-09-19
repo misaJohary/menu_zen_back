@@ -45,6 +45,7 @@ class Restaurant(RestaurantBase, table= True):
 
     menus: Union[List["Menu"], None]= Relationship(back_populates= "restaurant")
     categories: Union[List["Category"], None]= Relationship(back_populates= "restaurant")
+    tables: Union[List["RestaurantTable"], None]= Relationship(back_populates="restaurant")
     menu_items: Union[List[MenuItem], None]= Relationship(back_populates= "restaurant")
     users: Union[List["User"], None]= Relationship(back_populates= "restaurant")
 
@@ -83,6 +84,7 @@ class RestaurantTable(RestaurantTableBase, table= True):
     id: Union[int, None] = Field(default=None, primary_key=True)
     name: str
     orders: Union[List["Order"], None]= Relationship(back_populates= "r_table")
+    restaurant: Restaurant = Relationship(back_populates= "tables")
 
 class Order(OrderBase, table= True):
     id: Union[int, None] = Field(default=None, primary_key=True)

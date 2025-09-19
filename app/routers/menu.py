@@ -59,4 +59,3 @@ def delete_menu(menu_id: int, session: SessionDep):
     session.delete(menu)
     session.commit()
     return menu
-
