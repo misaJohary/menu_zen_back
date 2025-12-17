@@ -3,7 +3,7 @@ from typing import Optional, Union
 from pydantic import BaseModel
 from sqlmodel import Field, SQLModel
 
-from app.schemas.restaurant_schemas import RestaurantBase, RestaurantPublic
+from app.schemas.restaurant_schemas import RestaurantPublic
 
 
 class Token(BaseModel):

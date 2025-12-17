@@ -1,25 +1,26 @@
-from typing import Annotated
+from typing import Annotated, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 
 from app.configs.database_configs import SessionDep
-from app.models.models import Menu, Restaurant, User
-from app.schemas.menu_schemas import MenuBase, MenuCreate, MenuUpdate
+from app.models.models import Menu, MenuTranslation, User
+from app.schemas.menu_schemas import MenuBase, MenuCreate, MenuPublic, MenuUpdate
 from app.services.auth_service import get_current_active_user
+from app.translations.entity_with_translation_creator import EntityWithTranslationsManager
 
 router = APIRouter(tags=["menus"], dependencies=[Depends(get_current_active_user)])
 
-@router.post("/menus", response_model= MenuBase)
+@router.post("/menus", response_model= MenuPublic)
 def create_menu(menu: MenuCreate, session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
-    db_menu = Menu.model_validate(menu)
-    db_menu.restaurant_id = current_user.restaurant_id
-    session.add(db_menu)
-    session.commit()
-    session.refresh(db_menu)
-    return db_menu
+    manager = EntityWithTranslationsManager(session, current_user.restaurant_id)
+    return manager.create(
+        create_data=menu,
+        main_model=Menu,
+        translation_model=MenuTranslation,
+        foreign_key_field="menu_id"
+    )
 
-
-@router.get("/menus")
+@router.get("/menus", response_model= List[MenuPublic])
 def read_menus(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     menu_db = session.exec(select(Menu).where(Menu.restaurant_id == current_user.restaurant_id)).all()
     return menu_db
@@ -30,18 +31,17 @@ def get_menus_by_restaurant(restaurant_id: int, session: SessionDep):
     return menu_db
 
 
-@router.patch("/menus/{menu_id}", response_model= MenuBase)
+@router.patch("/menus/{menu_id}", response_model= MenuPublic)
 def update_menu(menu_id: int, menu: MenuUpdate, session: SessionDep):
-    menu_db = session.get(Menu, menu_id)
-    if not menu_db:
-        raise HTTPException(status_code=404, detail="Menu not found")
-    menu_data = menu.model_dump(exclude_unset= True)
-
-    menu_db.sqlmodel_update(menu_data)
-    session.add(menu_db)
-    session.commit()
-    session.refresh(menu_db)
-    return menu_db
+    manager = EntityWithTranslationsManager(session)
+    return manager.update(
+        entity_id=menu_id,
+        update_data=menu,
+        main_model=Menu,
+        translation_model=MenuTranslation,
+        foreign_key_field="menu_id",
+        entity_name="Menu"
+    )
 
 @router.get("/menus/{menu_id}")
 def read_menu(menu_id: int, session: SessionDep) -> MenuBase:
@@ -58,4 +58,4 @@ def delete_menu(menu_id: int, session: SessionDep):
         raise HTTPException(status_code=404, detail="Menu item not found")
     session.delete(menu)
     session.commit()
-    return menu
+    return menu.id

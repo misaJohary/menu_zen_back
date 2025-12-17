@@ -1,18 +1,21 @@
-from typing import Annotated, List
-from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlmodel import SQLModel, select
+from datetime import date, datetime
+from typing import Annotated, List, Union
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
+from sqlmodel import SQLModel, and_, func, select
 
 from app.configs.database_configs import SessionDep
 from app.models.models import MenuItem, Order, OrderMenuItem, RestaurantTable, User
 from app.schemas.auth_schemas import Role
 from app.schemas.order_shemas import OrderCreate, OrderPublic, OrderStatus, OrderUpdate, PaymentStatus
 from app.services.auth_service import get_current_active_user
+from app.services.ws_service import ConnectionManager, get_connection_manager
 
 
 router = APIRouter(tags=["orders"], dependencies=[Depends(get_current_active_user)])
 
 @router.post("/orders", response_model= OrderPublic)
-def create_order(order_data: OrderCreate, session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]): 
+def create_order(order_data: OrderCreate, session: SessionDep, background_tasks: BackgroundTasks,
+   current_user: Annotated[User, Depends(get_current_active_user)],  manager: ConnectionManager = Depends(get_connection_manager)): 
         # Validate restaurant table exists
         table_query = select(RestaurantTable).where(RestaurantTable.id == order_data.restaurant_table_id) 
         restaurant_table = session.exec(table_query).first()
@@ -36,12 +39,14 @@ def create_order(order_data: OrderCreate, session: SessionDep, current_user: Ann
             order_status=order_data.order_status,
             payment_status=order_data.payment_status,
             client_name=order_data.client_name,
-            server_id=current_user.id
+            server_id=current_user.id,
+            total_amount=order_data.total_amount,
         )
         session.add(db_order)
         session.commit()
         session.refresh(db_order)
         # Add menu items to the order
+
         for item_data in order_data.order_menu_items:
             # Get menu item to validate and get current price
             menu_item = session.get(MenuItem, item_data.menu_item_id)
@@ -68,11 +73,29 @@ def create_order(order_data: OrderCreate, session: SessionDep, current_user: Ann
         
         session.commit()
         session.refresh(db_order)
+
+        order_query = session.get(Order, db_order.id)
+    
+    # Convert to OrderPublic (use model_dump, not model_dump_json)
+        order_public = OrderPublic.model_validate(order_query)
+
+        #notify all concerned restaurant
+        background_tasks.add_task(
+            manager.broadcast_to_restaurant,
+            current_user.restaurant_id,
+            {
+                "type": "new_order",
+                "order": order_public.model_dump_json(),
+                "timestamp": datetime.now().isoformat(),
+                "message": f"New order #{db_order.id} created"
+            }
+    )
         
         return db_order
 
 @router.patch("/orders/{order_id}", response_model= OrderPublic)
-def update_order(order_id: int, order: OrderUpdate, session: SessionDep):
+def update_order(order_id: int, order: OrderUpdate,session: SessionDep, background_tasks: BackgroundTasks,
+   current_user: Annotated[User, Depends(get_current_active_user)],  manager: ConnectionManager = Depends(get_connection_manager)):
     order_db= session.get(Order, order_id)
     if not order_db:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -96,6 +119,23 @@ def update_order(order_id: int, order: OrderUpdate, session: SessionDep):
     
     session.commit()
     session.refresh(order_db)
+
+    order_query = session.get(Order, order_db.id)
+    
+    # Convert to OrderPublic (use model_dump, not model_dump_json)
+    order_public = OrderPublic.model_validate(order_query)
+
+        #notify all concerned restaurant
+    background_tasks.add_task(
+            manager.broadcast_to_restaurant,
+            current_user.restaurant_id,
+            {
+                "type": "order_updated",
+                "order": order_public.model_dump_json(),
+                "timestamp": datetime.now().isoformat(),
+                "message": f"New order #{order_db.id} created"
+            }
+    )
         
     return order_db
 
@@ -103,7 +143,7 @@ class OrderStatusUpdate(SQLModel):
     status: OrderStatus
 
 @router.patch("/orders/{order_id}/status", response_model= OrderPublic)
-def change_order_status(order_id: int, session: SessionDep, order_status: OrderStatusUpdate):
+def change_order_status(order_id: int, session: SessionDep, order_status: OrderStatusUpdate, background_tasks: BackgroundTasks, current_user: Annotated[User, Depends(get_current_active_user)], manager: ConnectionManager = Depends(get_connection_manager)):
     order_db= session.get(Order, order_id)
     if not order_db:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -111,6 +151,17 @@ def change_order_status(order_id: int, session: SessionDep, order_status: OrderS
     session.add(order_db)
     session.commit()
     session.refresh(order_db)
+    background_tasks.add_task(
+            manager.broadcast_to_restaurant,
+            current_user.restaurant_id,
+            {
+                "type": "update_order_status",
+                "order_id": order_db.id,
+                "new_status":order_status.status,
+                "timestamp": datetime.now().isoformat(),
+                "message": f"order #{order_db.id} updated"
+            }
+    )
     return order_db
 
 class OrderPaymentUpdate(SQLModel):
@@ -122,26 +173,64 @@ def change_order_status(order_id: int, session: SessionDep, payment_status: Paym
     order_db= session.get(Order, order_id)
     if not order_db:
         raise HTTPException(status_code=404, detail="Order not found")
-    order_db.payment_status= payment_status.status
+    order_db.payment_status= payment_status
     session.add(order_db)
     session.commit()
     session.refresh(order_db)
     return order_db
 
 @router.get("/orders", response_model=List[OrderPublic])
-def read_user_orders(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
-    #if current_user.roles is Role.ADMIN:
-        #return session.exec(select(Order).where(Order.server.restaurant_id == current_user.restaurant_id)).all()
-    orders = session.exec(select(Order).where(Order.server_id == current_user.id)).all()
+def read_user_orders(
+    today_only: Union[bool, None],
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    skip: int = 0,
+    limit: int = 100,
+):
+    # Build the base query
+    query = select(Order).where(Order.server_id == current_user.id)
+    
+    # Add date filter if needed
+    if today_only:
+        query = query.where(func.date(Order.created_at) == date.today())
+    
+    # Add ordering for consistent pagination
+    query = query.order_by(Order.created_at.desc())
+    
+    # Apply pagination
+    query = query.offset(skip).limit(limit)
+    
+    # Execute query
+    orders = session.exec(query).all()
+    # Filter out orders with None menu_items
+    valid_orders = []
+    for order in orders:
+        # Check if all menu_items are valid
+        if all(item.menu_item is not None for item in order.order_menu_items):
+            valid_orders.append(order)
+    
+    return valid_orders
+
+@router.get("orders/restaurant", response_model=List[OrderPublic])
+def read_restaurant_orders(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
+    orders = session.exec(select(Order).where(Order.r_table.restaurant_id==current_user.restaurant_id)).all()
     return orders
 
 @router.delete("/orders/{order_id}")
-def delete_order(order_id: int, session: SessionDep):
+def delete_order(order_id: int, session: SessionDep, background_tasks: BackgroundTasks, current_user: Annotated[User, Depends(get_current_active_user)], manager: ConnectionManager = Depends(get_connection_manager)):
     order= session.get(Order, order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order item not found")
     session.delete(order)
     session.commit()
-    return {
-        "message": "successfully deleted"
-    }
+    background_tasks.add_task(
+            manager.broadcast_to_restaurant,
+            current_user.restaurant_id,
+            {
+                "type": "order_deleted",
+                "order_id": order.id,
+                "timestamp": datetime.now().isoformat(),
+                "message": f"New order #{order.id} created"
+            }
+    )
+    return order.id

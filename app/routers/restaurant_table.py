@@ -26,7 +26,7 @@ def delete_table(table_id: int, session: SessionDep):
         raise HTTPException(status_code=404, detail="Table not found")
     session.delete(table)
     session.commit()
-    return table
+    return table.id
 
 @router.patch("/tables/{table_id}", response_model= RestaurantTableBase)
 def update_table(table_id: int, table: RestaurantTableUpdate, session: SessionDep):

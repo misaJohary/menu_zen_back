@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-from app.routers import categories, menu, menu_items, orders, restaurant, restaurant_table
+from app.routers import categories, languages, menu, menu_items, orders, restaurant, restaurant_table, stats, ws_connect
 
 from .configs.database_configs import create_db_and_tables
 
@@ -33,6 +33,9 @@ app.include_router(categories.router)
 app.include_router(menu_items.router)
 app.include_router(orders.router)
 app.include_router(restaurant_table.router)
+app.include_router(languages.router)
+app.include_router(ws_connect.router)
+app.include_router(stats.router)
 
 
 @app.get("/")

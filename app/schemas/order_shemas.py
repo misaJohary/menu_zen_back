@@ -25,7 +25,8 @@ class OrderBase(SQLModel):
     order_status: OrderStatus = OrderStatus.CREATED
     payment_status: PaymentStatus = PaymentStatus.UNPAID
     client_name: Optional[str]= Field(default= None)
-    server_id: Optional[int]= Field(default= None,foreign_key="user.id")           
+    server_id: Optional[int]= Field(default= None,foreign_key="user.id")
+    total_amount: Optional[int]= Field(default= None)           
     
 
 class OrderPublic(OrderBase):

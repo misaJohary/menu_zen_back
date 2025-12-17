@@ -1,40 +1,44 @@
 import shutil
 from typing import Annotated, List, Optional
 from uuid import uuid4
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, logger
 from pydantic import BaseModel
 from sqlmodel import Field, select
 from pathlib import Path as PathLib
-from sqlalchemy.orm import selectinload
 
 from app.configs.database_configs import SessionDep
-from app.models.models import Menu, MenuItem, User
-from app.schemas.menu_item_schemas import MenuItemBase, MenuItemCreate, MenuItemPublic, MenuItemUptade
+from app.models.models import Menu, MenuItem, MenuItemTranslation, User
+from app.schemas.menu_item_schemas import MenuItemCreate, MenuItemPublic, MenuItemTranslationBase, MenuItemUptade
 from app.schemas.order_menu_item_schemas import OrderMenuItemPublic
 from app.services.auth_service import get_current_active_user
+from app.translations.entity_with_translation_creator import EntityWithTranslationsManager
 
 router = APIRouter(tags=["menu_items"])
 
 @router.post("/menu-items",response_model= MenuItemPublic)
 def create_menu_item(menu: MenuItemCreate, session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
-    db_menu_item= MenuItem.model_validate(menu)
-    db_menu_item.restaurant_id = current_user.restaurant_id
-    session.add(db_menu_item)
-    session.commit()
-    session.refresh(db_menu_item)
-    return db_menu_item
+    manager = EntityWithTranslationsManager(session, current_user.restaurant_id)
+    return manager.create(
+        create_data=menu,
+        main_model=MenuItem,
+        translation_model=MenuItemTranslation,
+        foreign_key_field="menu_item_id"
+    )
 
-@router.patch("/menu-items/{menu_item_id}" ,response_model= MenuItemPublic)
+@router.patch("/menu-items/{menu_id}" ,response_model= MenuItemPublic)
 def update_menu_item(menu_id: int, menu: MenuItemUptade, session: SessionDep):
-    menu_db = session.get(MenuItem, menu_id)
-    if not menu_db:
-        raise HTTPException(status_code=404, detail="Menu item not found")
-    menu_data = menu.model_dump(exclude_unset=True)
-    menu_db.sqlmodel_update(menu_data)
-    session.add(menu_db)
-    session.commit()
-    session.refresh(menu_db)
-    return menu_db
+
+    print("heeeeere")
+    manager = EntityWithTranslationsManager(session)
+    print("heeeeere")
+    return manager.update(
+        entity_id=menu_id,
+        update_data=menu,
+        main_model=MenuItem,
+        translation_model=MenuItemTranslation,
+        foreign_key_field="menu_item_id",
+        entity_name="Menu Item"
+    )
 
 @router.delete("/menu-items/{menu_item_id}")
 def delete_menu_item(menu_item_id: int, session: SessionDep):
@@ -43,7 +47,7 @@ def delete_menu_item(menu_item_id: int, session: SessionDep):
         raise HTTPException(status_code=404, detail="Menu item not found")
     session.delete(menu)
     session.commit()
-    return menu
+    return menu.id
 
 @router.get("/menu-items/{menu_item_id}")
 def read_menu_item(menu_item_id: int, session: SessionDep) -> MenuItemPublic:
@@ -85,10 +89,36 @@ def parse_int_list(value: str = Form(...)) -> List[int]:
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid format. Use comma-separated integers.")
 
-@router.post("/menu-items-pics", response_model=MenuItemPublic)
+@router.delete("/images")
+async def delete_image(picture: str):
+    _delete_uploaded_file(picture)
+    return picture
+
+@router.post("/images")
+async def upload_image(
+    picture: Optional[UploadFile] = File(None)):
+    # Validate file types if files are provided
+    allowed_extensions = {'.jpg', '.jpeg', '.png', '.webp'}
+    max_file_size = 10 * 1024 * 1024  # 10MB
+    
+    picture_url = None
+    
+    # Handle single picture upload
+    if picture:
+        print("picture in not none", picture)
+        if not _is_valid_image(picture, allowed_extensions, max_file_size):
+            raise HTTPException(status_code=400, detail="Invalid image file")
+        picture_url = await _save_uploaded_file(picture, "menu_items")
+    print("picture is none")
+    return {
+        "picture": picture_url
+    }
+
+@router.post("/menu-items-pics", response_model=MenuItemPublic, deprecated=True)
 async def create_menu_item_with_pics(
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_active_user)],
+
     name: str = Form(...),
     description: Optional[str] = Form(None),
     price: float = Form(..., gt=0),
@@ -182,3 +212,28 @@ async def _save_uploaded_file(file: UploadFile, folder: str) -> str:
     # Return relative path for database storage
     return str(file_path)
 
+def _delete_uploaded_file(file_path: Optional[str]) -> bool:
+    """
+    Delete a file from the filesystem.
+    
+    Args:
+        file_path: Path to the file to delete (can be None)
+    
+    Returns:
+        bool: True if file was deleted successfully, False otherwise
+    """
+    if not file_path:
+        return True  # Nothing to delete
+    
+    try:
+        path = PathLib(file_path)
+        if path.exists() and path.is_file():
+            path.unlink()  # Delete the file
+            logger.info(f"Successfully deleted file: {file_path}")
+            return True
+        else:
+            logger.warning(f"File not found or not a file: {file_path}")
+            return False
+    except Exception as e:
+        logger.error(f"Failed to delete file {file_path}: {str(e)}")
+        return False
