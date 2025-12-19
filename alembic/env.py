@@ -1,6 +1,6 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
+from sqlalchemy import Engine, event, engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
@@ -26,6 +26,13 @@ target_metadata = SQLModel.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
+
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_conn, connection_record):
+    if 'sqlite' in str(dbapi_conn):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 def run_migrations_offline() -> None:
@@ -72,6 +79,15 @@ def run_migrations_online() -> None:
 
         with context.begin_transaction():
             context.run_migrations()
+    
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        # Add these options:
+        render_as_batch=True,  # Required for SQLite ALTER operations
+        compare_type=True,
+        # This tells Alembic to render enums as strings for SQLite
+    )
 
 
 if context.is_offline_mode():

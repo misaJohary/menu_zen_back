@@ -27,10 +27,7 @@ def create_menu_item(menu: MenuItemCreate, session: SessionDep, current_user: An
 
 @router.patch("/menu-items/{menu_id}" ,response_model= MenuItemPublic)
 def update_menu_item(menu_id: int, menu: MenuItemUptade, session: SessionDep):
-
-    print("heeeeere")
     manager = EntityWithTranslationsManager(session)
-    print("heeeeere")
     return manager.update(
         entity_id=menu_id,
         update_data=menu,
