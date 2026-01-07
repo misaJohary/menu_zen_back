@@ -237,7 +237,7 @@ def get_revenue(
             diff_percentage = ((today_rev - mean_rev) / mean_rev) * 100
         else:
             # avoid division by zero
-            diff_percentage = None
+            diff_percentage = 0.0
         
         return RevenueListResponse(
             today_revenue=today_rev,

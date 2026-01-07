@@ -7,6 +7,8 @@ from app.routers import categories, languages, menu, menu_items, orders, restaur
 
 from .configs.database_configs import create_db_and_tables
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from .routers import auth
 
 @asynccontextmanager
@@ -19,6 +21,14 @@ async def lifespan(app: FastAPI):
     print("Application shutting down...")
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En production, remplacez par ["http://localhost:PORT"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
