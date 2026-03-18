@@ -11,7 +11,7 @@ from app.configs.auth_configs import settings
 from app.configs.database_configs import SessionDep
 from app.models.models import Restaurant, User
 from app.services.auth_service import authenticate_user, create_access_token, get_current_active_user, get_password_hash
-from app.schemas.auth_schemas import Token, UserCreate, UserPublic, UserRestaurant
+from app.schemas.auth_schemas import Token, UserCreate, UserPublic, UserRestaurant, UserUpdate
 
 router = APIRouter(tags=["users"])
 
@@ -57,3 +57,24 @@ def get_user_restaurant(session: SessionDep, current_user: Annotated[User, Depen
 def get_users(session: SessionDep, offset: int=0, limit: Annotated[int, Query(le=100)]=100):
     users_db = session.exec(select(User).offset(offset).limit(limit)).scalars().all()
     return users_db
+
+@router.patch("/user", response_model=UserPublic)
+def update_user(
+    user_update: UserUpdate,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)]
+):
+    """Update the current authenticated user"""
+    db_user = session.get(User, current_user.id)
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    
+    # Update only provided fields
+    update_data = user_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_user, field, value)
+    
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+    return db_user

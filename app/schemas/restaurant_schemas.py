@@ -32,9 +32,11 @@ class RestaurantBase(SQLModel):
 class RestaurantCreate(RestaurantBase):
     pass
 
-class RestaurantUpdate(RestaurantBase):
+class RestaurantUpdate(SQLModel):
     name: Optional[str]= Field(default= None)
     description: Optional[str]= Field(default= None)
+    type: Optional[RestaurantType]= Field(default= None)
+    languages: Optional[List[LanguageCode]]= Field(default= None, sa_column=Column(JSON))
     logo: Optional[str]= Field(default= None)
     cover: Optional[str]= Field(default= None)
     pictures: Optional[List[str]]= Field(default= None, sa_column=Column(JSON))

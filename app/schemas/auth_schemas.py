@@ -33,6 +33,13 @@ class UserBase(SQLModel):
 class UserCreate(UserBase):
     password: str
 
+class UserUpdate(SQLModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    roles: Optional[Role] = None
+    disabled: Optional[bool] = None
+
 class UserPublic(UserBase):
     id: int
 
