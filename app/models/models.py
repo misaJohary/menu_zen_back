@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import List, Optional, Union
 from datetime import datetime
 from sqlmodel import Field, Relationship, SQLModel, UniqueConstraint
@@ -12,20 +13,94 @@ from app.schemas.restaurant_schemas import RestaurantBase
 from app.schemas.restaurant_table_schemas import RestaurantTableBase
 
 
-class MenuAndMenuItemLink(SQLModel,table= True):
-    menu_id: Union[int, None]= Field(default= None, foreign_key= "menu.id", primary_key= True)
-    menu_item_id: Union[int, None]= Field(default= None, foreign_key= "menu_item.id", primary_key= True)
+# ── RBAC Enum ─────────────────────────────────────────────────────────────────
 
-class OrderMenuItem(OrderMenuItemBase, table= True):
+class UserPermissionType(str, Enum):
+    GRANT = "grant"
+    REVOKE = "revoke"
+
+
+
+# ── RBAC Models ───────────────────────────────────────────────────────────────
+
+class Role(SQLModel, table=True):
+    """Represents a named role with an integer hierarchy level."""
+    __tablename__ = "roles"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=50, unique=True)
+    level: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    # Relationships
+    users: List["User"] = Relationship(back_populates="role")
+    role_permissions: List["RolePermission"] = Relationship(back_populates="role")
+
+
+class Permission(SQLModel, table=True):
+    """A single action that can be performed on a resource, e.g. orders:read."""
+    __tablename__ = "permissions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    resource: str = Field(max_length=100)
+    action: str = Field(max_length=100)
+
+    # Relationships
+    role_permissions: List["RolePermission"] = Relationship(back_populates="permission")
+    user_permissions: List["UserPermission"] = Relationship(back_populates="permission")
+
+    class Config:
+        table_args = (UniqueConstraint("resource", "action", name="uq_resource_action"),)
+
+
+class RolePermission(SQLModel, table=True):
+    """Many-to-many link between Role and Permission."""
+    __tablename__ = "role_permissions"
+
+    role_id: int = Field(foreign_key="roles.id", primary_key=True, ondelete="CASCADE")
+    permission_id: int = Field(foreign_key="permissions.id", primary_key=True, ondelete="CASCADE")
+
+    # Relationships
+    role: Optional[Role] = Relationship(back_populates="role_permissions")
+    permission: Optional[Permission] = Relationship(back_populates="role_permissions")
+
+
+class UserPermission(SQLModel, table=True):
+    """Per-user permission override: explicitly grant or revoke a permission."""
+    __tablename__ = "user_permissions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", ondelete="CASCADE")
+    permission_id: int = Field(foreign_key="permissions.id", ondelete="CASCADE")
+    # "grant" or "revoke"
+    type: UserPermissionType
+    granted_by: Optional[int] = Field(default=None, foreign_key="user.id", ondelete="SET NULL")
+    granted_at: datetime = Field(default_factory=datetime.now)
+
+    # Relationships
+    permission: Optional[Permission] = Relationship(back_populates="user_permissions")
+
+    class Config:
+        table_args = (UniqueConstraint("user_id", "permission_id", name="uq_user_permission"),)
+
+
+# ── Existing Models (unchanged except User) ───────────────────────────────────
+
+class MenuAndMenuItemLink(SQLModel, table=True):
+    menu_id: Union[int, None] = Field(default=None, foreign_key="menu.id", primary_key=True)
+    menu_item_id: Union[int, None] = Field(default=None, foreign_key="menu_item.id", primary_key=True)
+
+
+class OrderMenuItem(OrderMenuItemBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
     menu_item: Union["MenuItem", None] = Relationship(back_populates="order_menu_items")
-    order: Union["Order", None]= Relationship(back_populates="order_menu_items")
+    order: Union["Order", None] = Relationship(back_populates="order_menu_items")
 
 
-class MenuItemTranslation(MenuItemTranslationBase, table= True):
+class MenuItemTranslation(MenuItemTranslationBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     menu_item_id: Optional[int] = Field(default=None, foreign_key="menu_item.id", ondelete="CASCADE")
-    menu_item: Union["MenuItem", None]= Relationship(back_populates= "translations")
+    menu_item: Union["MenuItem", None] = Relationship(back_populates="translations")
 
 
 class MenuItem(MenuItemBase, table=True):
@@ -37,24 +112,26 @@ class MenuItem(MenuItemBase, table=True):
     updated_at: datetime = datetime.now()
 
     category: Union["Category", None] = Relationship(back_populates="menu_items")
-
     restaurant: Union["Restaurant", None] = Relationship(back_populates="menu_items")
-    order_menu_items: Union[List[OrderMenuItem], None]= Relationship(back_populates="menu_item")
-    translations: List[MenuItemTranslation] = Relationship(back_populates= "menu_item")
-    #orders: Union[list['Order'], None] = Relationship(back_populates= "menu_items", link_model= OrderMenuItemLink)
-    menus: Union[List['Menu'], None] = Relationship(back_populates= "menu_items", link_model= MenuAndMenuItemLink)
+    order_menu_items: Union[List[OrderMenuItem], None] = Relationship(back_populates="menu_item")
+    translations: List[MenuItemTranslation] = Relationship(back_populates="menu_item")
+    menus: Union[List["Menu"], None] = Relationship(
+        back_populates="menu_items", link_model=MenuAndMenuItemLink
+    )
 
-class Restaurant(RestaurantBase, table= True):
+
+class Restaurant(RestaurantBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
 
     created_at: datetime = datetime.now()
     updated_at: datetime = datetime.now()
 
-    menus: Union[List["Menu"], None]= Relationship(back_populates= "restaurant")
-    categories: Union[List["Category"], None]= Relationship(back_populates= "restaurant")
-    tables: Union[List["RestaurantTable"], None]= Relationship(back_populates="restaurant")
-    menu_items: Union[List[MenuItem], None]= Relationship(back_populates= "restaurant")
-    users: Union[List["User"], None]= Relationship(back_populates= "restaurant")
+    menus: Union[List["Menu"], None] = Relationship(back_populates="restaurant")
+    categories: Union[List["Category"], None] = Relationship(back_populates="restaurant")
+    tables: Union[List["RestaurantTable"], None] = Relationship(back_populates="restaurant")
+    menu_items: Union[List[MenuItem], None] = Relationship(back_populates="restaurant")
+    users: Union[List["User"], None] = Relationship(back_populates="restaurant")
+
 
 class CategoryTranslation(CategoryTranslationBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -62,21 +139,21 @@ class CategoryTranslation(CategoryTranslationBase, table=True):
     name: str = Field(max_length=50)
     description: Optional[str] = Field(default=None, max_length=500)
     category: Union["Category", None] = Relationship(back_populates="translations")
-    
+
     class Config:
-        # Ensure unique combination of category_id and language_code
-        table_args = (UniqueConstraint('category_id', 'language_code'),)
+        table_args = (UniqueConstraint("category_id", "language_code"),)
+
 
 class Category(CategoryBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
-    
+
     created_at: datetime = datetime.now()
     updated_at: datetime = datetime.now()
-    translations: List[CategoryTranslation] = Relationship(back_populates= "category")
+    translations: List[CategoryTranslation] = Relationship(back_populates="category")
 
-    menu_items: Union[List["MenuItem"], None] = Relationship(back_populates= "category")
-    #menu: Union["Menu", None] = Relationship(back_populates= "categories")
-    restaurant: Restaurant = Relationship(back_populates= "categories")
+    menu_items: Union[List["MenuItem"], None] = Relationship(back_populates="category")
+    restaurant: Restaurant = Relationship(back_populates="categories")
+
 
 class MenuTranslation(MenuTranslationBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -84,46 +161,55 @@ class MenuTranslation(MenuTranslationBase, table=True):
     name: str = Field(max_length=50)
     description: Optional[str] = Field(default=None, max_length=500)
     menu: Union["Menu", None] = Relationship(back_populates="translations")
-    
+
     class Config:
-        # Ensure unique combination of category_id and language_code
-        table_args = (UniqueConstraint('category_id', 'language_code'),)
+        table_args = (UniqueConstraint("category_id", "language_code"),)
 
 
-class Menu(MenuBase, table= True):
+class Menu(MenuBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
     created_at: datetime = datetime.now()
     updated_at: datetime = datetime.now()
     translations: list[MenuTranslation] = Relationship(back_populates="menu")
-    #categories: Union[List["Category"], None]= Relationship(back_populates= "menu")
-    restaurant: Restaurant = Relationship(back_populates= "menus")
-    menu_items: Union[List['MenuItem'], None] = Relationship(back_populates= "menus", link_model= MenuAndMenuItemLink)
+    restaurant: Restaurant = Relationship(back_populates="menus")
+    menu_items: Union[List["MenuItem"], None] = Relationship(
+        back_populates="menus", link_model=MenuAndMenuItemLink
+    )
+
 
 class User(UserBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
     hashed_psd: str
 
-    restaurant: Restaurant = Relationship(back_populates= "users")
+    # ── RBAC ───────────────────────────────────────────────────────────────
+    # role_id is inherited from UserBase (auth_schemas.py) — no duplicate here
+    role: Optional[Role] = Relationship(back_populates="users")
+    must_change_password: bool = Field(default=False)
+    # ───────────────────────────────────────────────────────────────────────
+
+    restaurant: Restaurant = Relationship(back_populates="users")
 
     created_at: datetime = datetime.now()
     updated_at: datetime = datetime.now()
 
-    orders: Union[List["Order"], None]= Relationship(back_populates= "server")
+    orders: Union[List["Order"], None] = Relationship(back_populates="server")
 
-class RestaurantTable(RestaurantTableBase, table= True):
 
-    __tablename__ = "restaurant_table" 
+class RestaurantTable(RestaurantTableBase, table=True):
+    __tablename__ = "restaurant_table"
+
     id: Union[int, None] = Field(default=None, primary_key=True)
     name: str
-    orders: Union[List["Order"], None]= Relationship(back_populates= "r_table")
-    restaurant: Restaurant = Relationship(back_populates= "tables")
+    orders: Union[List["Order"], None] = Relationship(back_populates="r_table")
+    restaurant: Restaurant = Relationship(back_populates="tables")
 
-class Order(OrderBase, table= True):
+
+class Order(OrderBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
 
     created_at: datetime = datetime.now()
     updated_at: datetime = datetime.now()
 
-    r_table: RestaurantTable= Relationship(back_populates= "orders")
-    server: Union[User, None]= Relationship(back_populates="orders")
-    order_menu_items: Union[List[OrderMenuItem], None]= Relationship(back_populates="order")
+    r_table: RestaurantTable = Relationship(back_populates="orders")
+    server: Union[User, None] = Relationship(back_populates="orders")
+    order_menu_items: Union[List[OrderMenuItem], None] = Relationship(back_populates="order")

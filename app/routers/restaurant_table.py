@@ -3,14 +3,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 
 from app.configs.database_configs import SessionDep
+from app.cores.permissions import require_permission
 from app.models.models import RestaurantTable, User
 from app.schemas.restaurant_table_schemas import RestaurantTableBase, RestaurantTableCreate, RestaurantTableUpdate
 from app.services.auth_service import get_current_active_user
 
 
-router = APIRouter(tags= ["tables"])
+router = APIRouter(tags=["tables"])
 
-@router.post("/tables")
+@router.post("/tables", dependencies=[require_permission("tables", "manage")])
 def create_table(table: RestaurantTableCreate, session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     db_table = RestaurantTable.model_validate(table)
     db_table.restaurant_id = current_user.restaurant_id
@@ -19,7 +20,7 @@ def create_table(table: RestaurantTableCreate, session: SessionDep, current_user
     session.refresh(db_table)
     return db_table
 
-@router.delete("/tables/{table_id}")
+@router.delete("/tables/{table_id}", dependencies=[require_permission("tables", "manage")])
 def delete_table(table_id: int, session: SessionDep):
     table= session.get(RestaurantTable, table_id)
     if not table:
@@ -28,7 +29,7 @@ def delete_table(table_id: int, session: SessionDep):
     session.commit()
     return table.id
 
-@router.patch("/tables/{table_id}", response_model= RestaurantTableBase)
+@router.patch("/tables/{table_id}", response_model=RestaurantTableBase, dependencies=[require_permission("tables", "manage")])
 def update_table(table_id: int, table: RestaurantTableUpdate, session: SessionDep):
     table_db = session.get(RestaurantTable, table_id)
     if not table_db:
@@ -41,7 +42,7 @@ def update_table(table_id: int, table: RestaurantTableUpdate, session: SessionDe
     session.refresh(table_db)
     return table_db
 
-@router.get("/tables")
+@router.get("/tables", dependencies=[require_permission("tables", "manage")])
 def read_tables(session: SessionDep, current_user: Annotated[RestaurantTable, Depends(get_current_active_user)]):
     table_db = session.exec(select(RestaurantTable).where(RestaurantTable.restaurant_id == current_user.restaurant_id)).all()
     return table_db

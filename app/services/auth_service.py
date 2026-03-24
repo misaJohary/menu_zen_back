@@ -11,8 +11,27 @@ from app.configs.database_configs import engine
 
 import jwt
 
-from app.models.models import User
-from app.schemas.auth_schemas import TokenData, UserBase, UserPublic
+from app.models.models import Role, User
+from app.schemas.auth_schemas import RoleName, TokenData, UserBase, UserPublic
+
+def get_role_id_by_name(role_name: str, session: Session) -> int:
+    """Resolve a role name to its numerical ID."""
+    # Use scalars() to ensure we get the Role object itself, not a Row
+    role = session.exec(select(Role).where(Role.name == role_name)).first()
+    
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Role '{role_name}' not found",
+        )
+    
+    # In some versions of SQLModel/SQLAlchemy, .first() on exec() might return a Row
+    # if not properly wrapped. We'll access it safely.
+    if hasattr(role, "id"):
+        return role.id
+    
+    # Fallback if it's a row-like object where the entity is the first element
+    return role[0].id
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

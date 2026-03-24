@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.configs.database_configs import SessionDep
 from app.models.models import Restaurant, User
-from app.schemas.auth_schemas import Token, UserCreate, UserPublic, UserRestaurant
+from app.schemas.auth_schemas import RoleName, Token, UserCreate, UserPublic, UserRestaurant
 from app.schemas.restaurant_schemas import RestaurantCreate, RestaurantUpdate, RestaurantPublic
-from app.services.auth_service import create_access_token, get_current_active_user, get_password_hash
+from app.services.auth_service import create_access_token, get_current_active_user, get_password_hash, get_role_id_by_name
 
 from app.configs.auth_configs import settings
+from app.cores.permissions import require_permission
 
 
 router = APIRouter(tags=["restaurants"])
@@ -19,10 +20,16 @@ def create_restaurant(restaurant: RestaurantCreate, user: UserCreate, session: S
     db_restaurant= Restaurant.model_validate(restaurant)
 
     #create user
+    role_id = user.role_id
+    if not role_id:
+        role_name = user.role_name or RoleName.ADMIN
+        role_id = get_role_id_by_name(role_name, session)
+    
     db_user= User(
-        **user.model_dump(exclude={'password'}),
+        **user.model_dump(exclude={'password', 'role_name', 'role_id', 'restaurant_id'}),
         restaurant= db_restaurant,
-        hashed_psd=get_password_hash(user.password)
+        hashed_psd=get_password_hash(user.password),
+        role_id=role_id
     )
 
     #access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
@@ -37,7 +44,7 @@ def create_restaurant(restaurant: RestaurantCreate, user: UserCreate, session: S
 
     return UserRestaurant(user=db_user.model_dump(), restaurant=db_user.restaurant, token=Token(access_token=access_token, token_type="bearer"))
 
-@router.patch("/restaurant", response_model=RestaurantPublic)
+@router.patch("/restaurant", response_model=RestaurantPublic, dependencies=[require_permission("users", "update")])
 def update_restaurant(
     restaurant_update: RestaurantUpdate,
     session: SessionDep,

@@ -4,16 +4,18 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
 from sqlmodel import SQLModel, and_, func, select
 
 from app.configs.database_configs import SessionDep
+from app.cores.permissions import require_permission
 from app.models.models import MenuItem, Order, OrderMenuItem, RestaurantTable, User
 from app.schemas.auth_schemas import Role
 from app.schemas.order_shemas import OrderCreate, OrderPublic, OrderStatus, OrderUpdate, PaymentStatus
+from app.schemas.order_menu_item_schemas import OrderMenuItemStatusUpdate, OrderMenuItemPublic
 from app.services.auth_service import get_current_active_user
 from app.services.ws_service import ConnectionManager, get_connection_manager
 
 
 router = APIRouter(tags=["orders"], dependencies=[Depends(get_current_active_user)])
 
-@router.post("/orders", response_model= OrderPublic)
+@router.post("/orders", response_model=OrderPublic, dependencies=[require_permission("orders", "create")])
 def create_order(order_data: OrderCreate, session: SessionDep, background_tasks: BackgroundTasks,
    current_user: Annotated[User, Depends(get_current_active_user)],  manager: ConnectionManager = Depends(get_connection_manager)): 
         # Validate restaurant table exists
@@ -93,7 +95,7 @@ def create_order(order_data: OrderCreate, session: SessionDep, background_tasks:
         
         return db_order
 
-@router.patch("/orders/{order_id}", response_model= OrderPublic)
+@router.patch("/orders/{order_id}", response_model=OrderPublic, dependencies=[require_permission("orders", "update")])
 def update_order(order_id: int, order: OrderUpdate,session: SessionDep, background_tasks: BackgroundTasks,
    current_user: Annotated[User, Depends(get_current_active_user)],  manager: ConnectionManager = Depends(get_connection_manager)):
     order_db= session.get(Order, order_id)
@@ -142,7 +144,7 @@ def update_order(order_id: int, order: OrderUpdate,session: SessionDep, backgrou
 class OrderStatusUpdate(SQLModel):
     status: OrderStatus
 
-@router.patch("/orders/{order_id}/status", response_model= OrderPublic)
+@router.patch("/orders/{order_id}/status", response_model=OrderPublic, dependencies=[require_permission("orders", "update")])
 def change_order_status(order_id: int, session: SessionDep, order_status: OrderStatusUpdate, background_tasks: BackgroundTasks, current_user: Annotated[User, Depends(get_current_active_user)], manager: ConnectionManager = Depends(get_connection_manager)):
     order_db= session.get(Order, order_id)
     if not order_db:
@@ -164,11 +166,45 @@ def change_order_status(order_id: int, session: SessionDep, order_status: OrderS
     )
     return order_db
 
+@router.patch("/orders/items/{item_id}/status", response_model=OrderMenuItemPublic, dependencies=[require_permission("orders", "update")])
+def change_order_menu_item_status(
+    item_id: int, 
+    status_update: OrderMenuItemStatusUpdate, 
+    session: SessionDep, 
+    background_tasks: BackgroundTasks, 
+    current_user: Annotated[User, Depends(get_current_active_user)], 
+    manager: ConnectionManager = Depends(get_connection_manager)
+):
+    item_db = session.get(OrderMenuItem, item_id)
+    if not item_db:
+        raise HTTPException(status_code=404, detail="Order menu item not found")
+    
+    item_db.status = status_update.status
+    session.add(item_db)
+    session.commit()
+    session.refresh(item_db)
+    
+    # Notify restaurant
+    background_tasks.add_task(
+        manager.broadcast_to_restaurant,
+        current_user.restaurant_id,
+        {
+            "type": "update_order_menu_item_status",
+            "order_id": item_db.order_id,
+            "item_id": item_db.id,
+            "new_status": status_update.status,
+            "timestamp": datetime.now().isoformat(),
+            "message": f"Order menu item #{item_db.id} updated to {status_update.status}"
+        }
+    )
+    
+    return item_db
+
 class OrderPaymentUpdate(SQLModel):
     status: PaymentStatus
 
 
-@router.patch("/orders/{order_id}/payment", response_model= OrderPublic)
+@router.patch("/orders/{order_id}/payment", response_model=OrderPublic, dependencies=[require_permission("payments", "create")])
 def change_order_status(order_id: int, session: SessionDep, payment_status: PaymentStatus):
     order_db= session.get(Order, order_id)
     if not order_db:
@@ -179,7 +215,7 @@ def change_order_status(order_id: int, session: SessionDep, payment_status: Paym
     session.refresh(order_db)
     return order_db
 
-@router.get("/orders", response_model=List[OrderPublic])
+@router.get("/orders", response_model=List[OrderPublic], dependencies=[require_permission("orders", "read")])
 def read_user_orders(
     today_only: Union[bool, None],
     session: SessionDep,
@@ -211,12 +247,12 @@ def read_user_orders(
     
     return valid_orders
 
-@router.get("orders/restaurant", response_model=List[OrderPublic])
+@router.get("orders/restaurant", response_model=List[OrderPublic], dependencies=[require_permission("orders", "read")])
 def read_restaurant_orders(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     orders = session.exec(select(Order).where(Order.r_table.restaurant_id==current_user.restaurant_id)).all()
     return orders
 
-@router.delete("/orders/{order_id}")
+@router.delete("/orders/{order_id}", dependencies=[require_permission("orders", "delete")])
 def delete_order(order_id: int, session: SessionDep, background_tasks: BackgroundTasks, current_user: Annotated[User, Depends(get_current_active_user)], manager: ConnectionManager = Depends(get_connection_manager)):
     order= session.get(Order, order_id)
     if not order:

@@ -7,6 +7,7 @@ from sqlmodel import Field, select
 from pathlib import Path as PathLib
 
 from app.configs.database_configs import SessionDep
+from app.cores.permissions import require_permission
 from app.models.models import Menu, MenuItem, MenuItemTranslation, User
 from app.schemas.menu_item_schemas import MenuItemCreate, MenuItemPublic, MenuItemTranslationBase, MenuItemUptade
 from app.schemas.order_menu_item_schemas import OrderMenuItemPublic
@@ -15,7 +16,7 @@ from app.translations.entity_with_translation_creator import EntityWithTranslati
 
 router = APIRouter(tags=["menu_items"])
 
-@router.post("/menu-items",response_model= MenuItemPublic)
+@router.post("/menu-items", response_model=MenuItemPublic, dependencies=[require_permission("menu", "create")])
 def create_menu_item(menu: MenuItemCreate, session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     manager = EntityWithTranslationsManager(session, current_user.restaurant_id)
     return manager.create(
@@ -25,7 +26,7 @@ def create_menu_item(menu: MenuItemCreate, session: SessionDep, current_user: An
         foreign_key_field="menu_item_id"
     )
 
-@router.patch("/menu-items/{menu_id}" ,response_model= MenuItemPublic)
+@router.patch("/menu-items/{menu_id}", response_model=MenuItemPublic, dependencies=[require_permission("menu", "update")])
 def update_menu_item(menu_id: int, menu: MenuItemUptade, session: SessionDep):
     manager = EntityWithTranslationsManager(session)
     return manager.update(
@@ -37,7 +38,7 @@ def update_menu_item(menu_id: int, menu: MenuItemUptade, session: SessionDep):
         entity_name="Menu Item"
     )
 
-@router.delete("/menu-items/{menu_item_id}")
+@router.delete("/menu-items/{menu_item_id}", dependencies=[require_permission("menu", "delete")])
 def delete_menu_item(menu_item_id: int, session: SessionDep):
     menu= session.get(MenuItem, menu_item_id)
     if not menu:
@@ -64,7 +65,7 @@ def read_menus_item(session: SessionDep, current_user: Annotated[User, Depends(g
 
 @router.get("/menu-items-order")
 def read_order_menu_item(menus: Annotated[List[MenuItemPublic], Depends(read_menus_item)]):
-    return [OrderMenuItemPublic(menu_item=menu,quantity=0, unit_price=menu.price) for menu in menus]
+    return [OrderMenuItemPublic(menu_item=menu, menu_item_id=menu.id, quantity=0, unit_price=menu.price) for menu in menus]
 
 @router.get("/categories/{category_id}/menu-items")
 def read_menus_item_by_id_category(category_id: int, session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):

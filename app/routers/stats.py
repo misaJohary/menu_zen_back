@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlmodel import Enum, and_, func, select
 
 from app.configs.database_configs import SessionDep
+from app.cores.permissions import require_permission
 from app.models.models import MenuItem, Order, OrderMenuItem, RestaurantTable, User
 from app.schemas.order_shemas import OrderStatus
 from app.services.auth_service import get_current_active_user
@@ -13,7 +14,7 @@ from app.services.auth_service import get_current_active_user
 
 router = APIRouter(
     tags=["stats"],
-    dependencies= [Depends(get_current_active_user)])
+    dependencies=[Depends(get_current_active_user), require_permission("reports", "read")])
 
 
 class DailyOrderCount(BaseModel):

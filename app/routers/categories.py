@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 
 from app.configs.database_configs import SessionDep
+from app.cores.permissions import require_permission
 from app.models.models import Category, CategoryTranslation, User
 from app.schemas.category_schemas import CategoryBase, CategoryCreate, CategoryPublic, CategoryUpdate
 from app.services.auth_service import get_current_active_user
@@ -11,9 +12,9 @@ from app.translations.entity_with_translation_creator import EntityWithTranslati
 
 router = APIRouter(
     tags=["categories"],
-    dependencies= [Depends(get_current_active_user)])
+    dependencies=[Depends(get_current_active_user)])
 
-@router.post("/categories",response_model= CategoryPublic)
+@router.post("/categories", response_model=CategoryPublic, dependencies=[require_permission("menu", "create")])
 def create_category(category: CategoryCreate, session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     manager = EntityWithTranslationsManager(session, current_user.restaurant_id)
     return manager.create(
@@ -23,7 +24,7 @@ def create_category(category: CategoryCreate, session: SessionDep, current_user:
         foreign_key_field="category_id"
     )
 
-@router.patch("/categories/{category_id}" ,response_model= CategoryPublic)
+@router.patch("/categories/{category_id}", response_model=CategoryPublic, dependencies=[require_permission("menu", "update")])
 def update_category(category_id: int, category: CategoryUpdate, session: SessionDep):
     manager = EntityWithTranslationsManager(session)
     return manager.update(
@@ -35,7 +36,7 @@ def update_category(category_id: int, category: CategoryUpdate, session: Session
         entity_name="Category"
     )
 
-@router.delete("/categories/{category_id}")
+@router.delete("/categories/{category_id}", dependencies=[require_permission("menu", "delete")])
 def delete_category(category_id: int, session: SessionDep):
     category= session.get(Category, category_id)
     if not category:
@@ -58,7 +59,7 @@ def read_category(category_id: int, session: SessionDep) -> CategoryBase:
         raise HTTPException(status_code=500, detail=f"{str(exp)}")
     
 
-@router.get("/categories", response_model=List[CategoryPublic])
+@router.get("/categories", response_model=List[CategoryPublic], dependencies=[require_permission("menu", "read")])
 def read_categories(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
     category_db = session.exec(select(Category).where(Category.restaurant_id == current_user.restaurant_id)).all()
     return category_db

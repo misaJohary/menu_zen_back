@@ -74,20 +74,14 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,   # Required for SQLite ALTER / DROP COLUMN
+            compare_type=True,
         )
 
         with context.begin_transaction():
             context.run_migrations()
-    
-    context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        # Add these options:
-        render_as_batch=True,  # Required for SQLite ALTER operations
-        compare_type=True,
-        # This tells Alembic to render enums as strings for SQLite
-    )
 
 
 if context.is_offline_mode():
