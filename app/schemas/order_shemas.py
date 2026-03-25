@@ -6,6 +6,7 @@ from enum import Enum
 from app.schemas.menu_item_schemas import MenuItemPublic
 from app.schemas.order_menu_item_schemas import OrderMenuItemBase, OrderMenuItemCreate, OrderMenuItemPublic
 from app.schemas.restaurant_table_schemas import RestaurantTablePublic
+from app.schemas.auth_schemas import UserPublic
 
 class OrderStatus(str, Enum):
     CREATED = "created"
@@ -32,6 +33,7 @@ class OrderBase(SQLModel):
 class OrderPublic(OrderBase):
     id: int
     r_table: RestaurantTablePublic
+    server: Optional[UserPublic] = None
     order_menu_items: Optional[list[OrderMenuItemPublic]]
     created_at: datetime
 

@@ -84,6 +84,7 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
     "cook": [
         ("menu",   "read"),
         ("orders", "read"),
+        ("orders", "update"),
     ],
 }
 

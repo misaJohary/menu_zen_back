@@ -223,8 +223,16 @@ def read_user_orders(
     skip: int = 0,
     limit: int = 100,
 ):
-    # Build the base query
-    query = select(Order).where(Order.server_id == current_user.id)
+    # Build the base query based on user role
+    from app.services.permission_service import _load_role_name
+    role_name = _load_role_name(current_user, session)
+    
+    if role_name in ["admin", "super_admin", "cook", "cashier"]:
+        # These roles should see all orders for the restaurant
+        query = select(Order).join(RestaurantTable).where(RestaurantTable.restaurant_id == current_user.restaurant_id)
+    else:
+        # Others (like servers) see only their own orders
+        query = select(Order).where(Order.server_id == current_user.id)
     
     # Add date filter if needed
     if today_only:
@@ -247,9 +255,9 @@ def read_user_orders(
     
     return valid_orders
 
-@router.get("orders/restaurant", response_model=List[OrderPublic], dependencies=[require_permission("orders", "read")])
+@router.get("/orders/restaurant", response_model=List[OrderPublic], dependencies=[require_permission("orders", "read")])
 def read_restaurant_orders(session: SessionDep, current_user: Annotated[User, Depends(get_current_active_user)]):
-    orders = session.exec(select(Order).where(Order.r_table.restaurant_id==current_user.restaurant_id)).all()
+    orders = session.exec(select(Order).join(RestaurantTable).where(RestaurantTable.restaurant_id == current_user.restaurant_id)).all()
     return orders
 
 @router.delete("/orders/{order_id}", dependencies=[require_permission("orders", "delete")])
