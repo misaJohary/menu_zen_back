@@ -64,7 +64,23 @@ def read_menus_item(session: SessionDep, current_user: Annotated[User, Depends(g
     return results
 
 @router.get("/menu-items-order")
-def read_order_menu_item(menus: Annotated[List[MenuItemPublic], Depends(read_menus_item)]):
+def read_order_menu_item(
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    search: Optional[str] = None,
+    category_id: Optional[int] = None,
+):
+    statement = select(MenuItem).where(MenuItem.restaurant_id == current_user.restaurant_id)
+    if search:
+        statement = (
+            statement
+            .join(MenuItemTranslation, MenuItemTranslation.menu_item_id == MenuItem.id)
+            .where(MenuItemTranslation.name.ilike(f"%{search}%"))
+            .distinct()
+        )
+    if category_id is not None:
+        statement = statement.where(MenuItem.category_id == category_id)
+    menus = session.exec(statement).all()
     return [OrderMenuItemPublic(menu_item=menu, menu_item_id=menu.id, quantity=0, unit_price=menu.price) for menu in menus]
 
 @router.get("/categories/{category_id}/menu-items")
