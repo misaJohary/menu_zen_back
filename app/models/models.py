@@ -108,8 +108,8 @@ class MenuItem(MenuItemBase, table=True):
 
     id: Union[int, None] = Field(default=None, primary_key=True)
 
-    created_at: datetime = datetime.now()
-    updated_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     category: Union["Category", None] = Relationship(back_populates="menu_items")
     restaurant: Union["Restaurant", None] = Relationship(back_populates="menu_items")
@@ -123,8 +123,8 @@ class MenuItem(MenuItemBase, table=True):
 class Restaurant(RestaurantBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
 
-    created_at: datetime = datetime.now()
-    updated_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     menus: Union[List["Menu"], None] = Relationship(back_populates="restaurant")
     categories: Union[List["Category"], None] = Relationship(back_populates="restaurant")
@@ -147,8 +147,8 @@ class CategoryTranslation(CategoryTranslationBase, table=True):
 class Category(CategoryBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
 
-    created_at: datetime = datetime.now()
-    updated_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
     translations: List[CategoryTranslation] = Relationship(back_populates="category")
 
     menu_items: Union[List["MenuItem"], None] = Relationship(back_populates="category")
@@ -168,8 +168,8 @@ class MenuTranslation(MenuTranslationBase, table=True):
 
 class Menu(MenuBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
-    created_at: datetime = datetime.now()
-    updated_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
     translations: list[MenuTranslation] = Relationship(back_populates="menu")
     restaurant: Restaurant = Relationship(back_populates="menus")
     menu_items: Union[List["MenuItem"], None] = Relationship(
@@ -189,8 +189,8 @@ class User(UserBase, table=True):
 
     restaurant: Restaurant = Relationship(back_populates="users")
 
-    created_at: datetime = datetime.now()
-    updated_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     orders: Union[List["Order"], None] = Relationship(back_populates="server")
 
@@ -207,8 +207,8 @@ class RestaurantTable(RestaurantTableBase, table=True):
 class Order(OrderBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
 
-    created_at: datetime = datetime.now()
-    updated_at: datetime = datetime.now()
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     r_table: RestaurantTable = Relationship(back_populates="orders")
     server: Union[User, None] = Relationship(back_populates="orders")

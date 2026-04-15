@@ -1,4 +1,3 @@
-import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -77,14 +76,14 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
         ("payments", "create"), ("payments","read"),
     ],
     "server": [
-        ("menu",   "read"),
-        ("orders", "create"), ("orders", "read"), ("orders", "update"),
+        ("menu", "create"), ("menu", "read"),
+        ("orders", "create"), ("orders", "read"), ("orders", "update"), ("orders", "delete"),
         ("tables", "manage"),
+        ("payments", "read"),
     ],
     "cook": [
         ("menu",   "read"),
         ("orders", "read"),
-        ("orders", "update"),
     ],
 }
 

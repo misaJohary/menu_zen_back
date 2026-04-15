@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Annotated, List, Union
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
-from sqlmodel import SQLModel, and_, func, select
+from sqlmodel import SQLModel, and_, func, or_, select
 
 from app.configs.database_configs import SessionDep
 from app.cores.permissions import require_permission
@@ -222,37 +222,48 @@ def read_user_orders(
     current_user: Annotated[User, Depends(get_current_active_user)],
     skip: int = 0,
     limit: int = 100,
+    search: Union[str, None] = None,
 ):
     # Build the base query based on user role
     from app.services.permission_service import _load_role_name
     role_name = _load_role_name(current_user, session)
-    
+
     if role_name in ["admin", "super_admin", "cook", "cashier"]:
         # These roles should see all orders for the restaurant
-        query = select(Order).join(RestaurantTable).where(RestaurantTable.restaurant_id == current_user.restaurant_id)
+        base_query = select(Order).join(RestaurantTable).where(RestaurantTable.restaurant_id == current_user.restaurant_id)
     else:
         # Others (like servers) see only their own orders
-        query = select(Order).where(Order.server_id == current_user.id)
-    
+        base_query = select(Order).join(RestaurantTable).where(Order.server_id == current_user.id)
+
+    # Add search filter on client name or table name
+    if search:
+        pattern = f"%{search}%"
+        base_query = base_query.where(
+            or_(
+                Order.client_name.ilike(pattern),
+                RestaurantTable.name.ilike(pattern),
+            )
+        )
+
     # Add date filter if needed
     if today_only:
-        query = query.where(func.date(Order.created_at) == date.today())
-    
+        base_query = base_query.where(func.date(Order.created_at) == date.today())
+
     # Add ordering for consistent pagination
-    query = query.order_by(Order.created_at.desc())
-    
+    base_query = base_query.order_by(Order.created_at.desc())
+
     # Apply pagination
-    query = query.offset(skip).limit(limit)
-    
+    base_query = base_query.offset(skip).limit(limit)
+
     # Execute query
-    orders = session.exec(query).all()
+    orders = session.exec(base_query).all()
+
     # Filter out orders with None menu_items
     valid_orders = []
     for order in orders:
-        # Check if all menu_items are valid
         if all(item.menu_item is not None for item in order.order_menu_items):
             valid_orders.append(order)
-    
+
     return valid_orders
 
 @router.get("/orders/restaurant", response_model=List[OrderPublic], dependencies=[require_permission("orders", "read")])
