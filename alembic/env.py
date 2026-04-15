@@ -31,7 +31,10 @@ target_metadata = SQLModel.metadata
 def set_sqlite_pragma(dbapi_conn, connection_record):
     if 'sqlite' in str(dbapi_conn):
         cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
+        # Keep FK enforcement OFF during migrations — batch_alter_table needs to
+        # drop and recreate tables, which fails when other tables hold FKs to them.
+        # The app's own engine (database_configs.py) sets FK=ON at runtime.
+        cursor.execute("PRAGMA foreign_keys=OFF")
         cursor.close()
 
 
