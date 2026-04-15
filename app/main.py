@@ -17,6 +17,7 @@ from app.models.models import (
 from app.routers import (
     auth,
     categories,
+    kitchens,
     languages,
     menu,
     menu_items,
@@ -58,6 +59,10 @@ _ALL_PERMISSIONS: list[tuple[str, str]] = [
     ("payments", "read"),
     ("tables",   "manage"),
     ("reports",  "read"),
+    ("kitchens", "create"),
+    ("kitchens", "read"),
+    ("kitchens", "update"),
+    ("kitchens", "delete"),
 ]
 
 _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
@@ -69,6 +74,7 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
         ("payments", "create"), ("payments", "read"),
         ("tables",   "manage"),
         ("reports",  "read"),
+        ("kitchens", "create"), ("kitchens", "read"), ("kitchens", "update"), ("kitchens", "delete"),
     ],
     "cashier": [
         ("menu",     "read"),
@@ -80,10 +86,12 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
         ("orders", "create"), ("orders", "read"), ("orders", "update"), ("orders", "delete"),
         ("tables", "manage"),
         ("payments", "read"),
+        ("kitchens", "read"),
     ],
     "cook": [
-        ("menu",   "read"),
-        ("orders", "read"),
+        ("menu",     "read"),
+        ("orders",   "read"),
+        ("kitchens", "read"),
     ],
 }
 
@@ -237,6 +245,7 @@ app.include_router(auth.router)
 app.include_router(restaurant.router)
 app.include_router(menu.router)
 app.include_router(categories.router)
+app.include_router(kitchens.router)
 app.include_router(menu_items.router)
 app.include_router(orders.router)
 app.include_router(restaurant_table.router)

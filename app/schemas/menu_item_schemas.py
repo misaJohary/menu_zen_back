@@ -16,6 +16,7 @@ class MenuItemBase(SQLModel):
     pictures: Union[List[str], None]= Field(default= None,sa_column=Column(JSON))
     category_id: Union[int, None]=Field(default= None, foreign_key="category.id")
     restaurant_id: Union[int, None]=Field(default= None, foreign_key="restaurant.id")
+    kitchen_id: Optional[int]= Field(default=None, foreign_key="kitchen.id", ondelete="SET NULL")
     active: bool= True
 
 class MenuItemCreate(MenuItemBase):
@@ -38,5 +39,6 @@ class MenuItemUptade(MenuItemBase):
     pictures: Optional[List[str]]= Field(default= None, sa_column=Column(JSON))
     category_id: Optional[int]= Field(default= None, foreign_key="category.id")
     restaurant_id: Optional[int]=Field(default= None, foreign_key="restaurant.id")
+    kitchen_id: Optional[int]= Field(default=None, foreign_key="kitchen.id", ondelete="SET NULL")
     menus: Optional[List[MenuPublic]]= Field(default=None)
     active: Optional[bool]= Field(default=None)

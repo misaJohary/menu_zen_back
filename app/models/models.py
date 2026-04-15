@@ -5,6 +5,7 @@ from sqlmodel import Field, Relationship, SQLModel, UniqueConstraint
 
 from app.schemas.auth_schemas import UserBase
 from app.schemas.category_schemas import CategoryBase, CategoryTranslationBase
+from app.schemas.kitchen_schemas import KitchenBase
 from app.schemas.menu_item_schemas import MenuItemBase, MenuItemTranslationBase
 from app.schemas.menu_schemas import MenuBase, MenuTranslationBase
 from app.schemas.order_menu_item_schemas import OrderMenuItemBase
@@ -97,6 +98,32 @@ class OrderMenuItem(OrderMenuItemBase, table=True):
     order: Union["Order", None] = Relationship(back_populates="order_menu_items")
 
 
+class KitchenUserLink(SQLModel, table=True):
+    """Many-to-many: Kitchen ↔ User (cooks assigned to kitchens)."""
+    __tablename__ = "kitchen_user_link"
+
+    kitchen_id: Optional[int] = Field(
+        default=None, foreign_key="kitchen.id", primary_key=True, ondelete="CASCADE"
+    )
+    user_id: Optional[int] = Field(
+        default=None, foreign_key="user.id", primary_key=True, ondelete="CASCADE"
+    )
+
+
+class Kitchen(KitchenBase, table=True):
+    __tablename__ = "kitchen"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    restaurant: Optional["Restaurant"] = Relationship(back_populates="kitchens")
+    menu_items: list["MenuItem"] = Relationship(back_populates="kitchen")
+    users: list["User"] = Relationship(
+        back_populates="kitchens", link_model=KitchenUserLink
+    )
+
+
 class MenuItemTranslation(MenuItemTranslationBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     menu_item_id: Optional[int] = Field(default=None, foreign_key="menu_item.id", ondelete="CASCADE")
@@ -107,12 +134,12 @@ class MenuItem(MenuItemBase, table=True):
     __tablename__ = "menu_item"
 
     id: Union[int, None] = Field(default=None, primary_key=True)
-
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
     category: Union["Category", None] = Relationship(back_populates="menu_items")
     restaurant: Union["Restaurant", None] = Relationship(back_populates="menu_items")
+    kitchen: Optional["Kitchen"] = Relationship(back_populates="menu_items")
     order_menu_items: Union[List[OrderMenuItem], None] = Relationship(back_populates="menu_item")
     translations: List[MenuItemTranslation] = Relationship(back_populates="menu_item")
     menus: Union[List["Menu"], None] = Relationship(
@@ -131,6 +158,7 @@ class Restaurant(RestaurantBase, table=True):
     tables: Union[List["RestaurantTable"], None] = Relationship(back_populates="restaurant")
     menu_items: Union[List[MenuItem], None] = Relationship(back_populates="restaurant")
     users: Union[List["User"], None] = Relationship(back_populates="restaurant")
+    kitchens: list["Kitchen"] = Relationship(back_populates="restaurant")
 
 
 class CategoryTranslation(CategoryTranslationBase, table=True):
@@ -188,6 +216,9 @@ class User(UserBase, table=True):
     # ───────────────────────────────────────────────────────────────────────
 
     restaurant: Restaurant = Relationship(back_populates="users")
+    kitchens: list["Kitchen"] = Relationship(
+        back_populates="users", link_model=KitchenUserLink
+    )
 
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
