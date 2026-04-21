@@ -1,19 +1,108 @@
 from datetime import date, datetime
-from typing import Annotated, List, Union
+from typing import Annotated, List, Optional, Union
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
-from sqlmodel import SQLModel, and_, func, or_, select
+from sqlalchemy import and_ as sa_and
+from sqlmodel import Session, SQLModel, and_, exists, func, or_, select
 
 from app.configs.database_configs import SessionDep
 from app.cores.permissions import require_permission
-from app.models.models import MenuItem, Order, OrderMenuItem, RestaurantTable, User
+from app.models.models import (
+    MenuItem,
+    Order,
+    OrderMenuItem,
+    RestaurantTable,
+    TableReservation,
+    TableStatusLog,
+    User,
+)
 from app.schemas.auth_schemas import Role
 from app.schemas.order_shemas import OrderCreate, OrderPublic, OrderStatus, OrderUpdate, PaymentStatus
 from app.schemas.order_menu_item_schemas import OrderMenuItemStatusUpdate, OrderMenuItemPublic
+from app.schemas.restaurant_table_schemas import ReservationStatus, TableStatus
 from app.services.auth_service import get_current_active_user
 from app.services.ws_service import ConnectionManager, get_connection_manager
 
 
 router = APIRouter(tags=["orders"], dependencies=[Depends(get_current_active_user)])
+
+
+def maybe_auto_release_table(
+    table_id: int,
+    session: Session,
+    background_tasks: BackgroundTasks,
+    manager: ConnectionManager,
+) -> None:
+    """Release a table back to `free` when every order on it is paid (or cancelled).
+
+    Runs a single EXISTS query so cost is independent of order count for the
+    table. No-op when the table is already free or still has open orders.
+    """
+    table = session.get(RestaurantTable, table_id)
+    if table is None or table.status == TableStatus.FREE:
+        return
+
+    has_open_orders = session.exec(
+        select(
+            exists().where(
+                sa_and(
+                    Order.restaurant_table_id == table_id,
+                    Order.payment_status != PaymentStatus.PAID,
+                    Order.order_status != OrderStatus.CANCELLED,
+                )
+            )
+        )
+    ).one()
+    # `exec(select(exists()...))` returns a scalar boolean in SQLModel.
+    if has_open_orders:
+        return
+
+    old_status = table.status
+
+    active_reservation = session.exec(
+        select(TableReservation)
+        .where(TableReservation.table_id == table_id)
+        .where(TableReservation.status == ReservationStatus.ACTIVE)
+    ).first()
+    if active_reservation is not None:
+        active_reservation.status = ReservationStatus.CANCELLED
+        active_reservation.updated_at = datetime.now()
+        session.add(active_reservation)
+
+    table.status = TableStatus.FREE
+    table.server_id = None
+    table.waiting_since = None
+    table.updated_at = datetime.now()
+    session.add(table)
+
+    session.add(
+        TableStatusLog(
+            table_id=table.id,
+            changed_by_id=None,
+            old_status=old_status,
+            new_status=TableStatus.FREE,
+            note="auto-released: all orders paid",
+        )
+    )
+
+    session.commit()
+    session.refresh(table)
+
+    background_tasks.add_task(
+        manager.broadcast_to_restaurant,
+        str(table.restaurant_id),
+        {
+            "type": "table_status_changed",
+            "table_id": table.id,
+            "table_name": table.name,
+            "old_status": old_status,
+            "new_status": table.status,
+            "server_id": table.server_id,
+            "waiting_since": None,
+            "reservation_at": None,
+            "changed_by_id": None,
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
 
 @router.post("/orders", response_model=OrderPublic, dependencies=[require_permission("orders", "create")])
 def create_order(order_data: OrderCreate, session: SessionDep, background_tasks: BackgroundTasks,
@@ -102,6 +191,7 @@ def update_order(order_id: int, order: OrderUpdate,session: SessionDep, backgrou
     if not order_db:
         raise HTTPException(status_code=404, detail="Order not found")
     order_data = order.model_dump(exclude_unset= True, exclude={'order_menu_items'})
+    status_fields_changed = "payment_status" in order_data or "order_status" in order_data
     order_db.sqlmodel_update(order_data)
     session.add(order_db)
     session.commit()
@@ -138,7 +228,12 @@ def update_order(order_id: int, order: OrderUpdate,session: SessionDep, backgrou
                 "message": f"New order #{order_db.id} created"
             }
     )
-        
+
+    if status_fields_changed and order_db.restaurant_table_id is not None:
+        maybe_auto_release_table(
+            order_db.restaurant_table_id, session, background_tasks, manager
+        )
+
     return order_db
 
 class OrderStatusUpdate(SQLModel):
@@ -164,6 +259,12 @@ def change_order_status(order_id: int, session: SessionDep, order_status: OrderS
                 "message": f"order #{order_db.id} updated"
             }
     )
+
+    if order_db.restaurant_table_id is not None:
+        maybe_auto_release_table(
+            order_db.restaurant_table_id, session, background_tasks, manager
+        )
+
     return order_db
 
 @router.patch("/orders/items/{item_id}/status", response_model=OrderMenuItemPublic, dependencies=[require_permission("orders", "update")])
@@ -205,7 +306,13 @@ class OrderPaymentUpdate(SQLModel):
 
 
 @router.patch("/orders/{order_id}/payment", response_model=OrderPublic, dependencies=[require_permission("payments", "create")])
-def change_order_status(order_id: int, session: SessionDep, payment_status: PaymentStatus):
+def change_order_payment(
+    order_id: int,
+    session: SessionDep,
+    payment_status: PaymentStatus,
+    background_tasks: BackgroundTasks,
+    manager: ConnectionManager = Depends(get_connection_manager),
+):
     order_db= session.get(Order, order_id)
     if not order_db:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -213,6 +320,12 @@ def change_order_status(order_id: int, session: SessionDep, payment_status: Paym
     session.add(order_db)
     session.commit()
     session.refresh(order_db)
+
+    if order_db.restaurant_table_id is not None:
+        maybe_auto_release_table(
+            order_db.restaurant_table_id, session, background_tasks, manager
+        )
+
     return order_db
 
 @router.get("/orders", response_model=List[OrderPublic], dependencies=[require_permission("orders", "read")])

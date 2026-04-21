@@ -11,7 +11,11 @@ from app.schemas.menu_schemas import MenuBase, MenuTranslationBase
 from app.schemas.order_menu_item_schemas import OrderMenuItemBase
 from app.schemas.order_shemas import OrderBase
 from app.schemas.restaurant_schemas import RestaurantBase
-from app.schemas.restaurant_table_schemas import RestaurantTableBase
+from app.schemas.restaurant_table_schemas import (
+    ReservationStatus,
+    RestaurantTableBase,
+    TableStatus,
+)
 
 
 # ── RBAC Enum ─────────────────────────────────────────────────────────────────
@@ -224,6 +228,10 @@ class User(UserBase, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
 
     orders: Union[List["Order"], None] = Relationship(back_populates="server")
+    assigned_tables: List["RestaurantTable"] = Relationship(
+        back_populates="server",
+        sa_relationship_kwargs={"foreign_keys": "RestaurantTable.server_id"},
+    )
 
 
 class RestaurantTable(RestaurantTableBase, table=True):
@@ -233,6 +241,62 @@ class RestaurantTable(RestaurantTableBase, table=True):
     name: str
     orders: Union[List["Order"], None] = Relationship(back_populates="r_table")
     restaurant: Restaurant = Relationship(back_populates="tables")
+    server: Optional[User] = Relationship(
+        back_populates="assigned_tables",
+        sa_relationship_kwargs={"foreign_keys": "RestaurantTable.server_id"},
+    )
+    status_logs: List["TableStatusLog"] = Relationship(back_populates="table")
+    table_reservations: List["TableReservation"] = Relationship(back_populates="table")
+
+
+class Reservation(SQLModel, table=True):
+    __tablename__ = "reservation"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    phone: str
+    reserved_at: datetime
+    status: ReservationStatus = Field(default=ReservationStatus.ACTIVE)
+    note: Optional[str] = Field(default=None)
+    created_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    table_reservations: List["TableReservation"] = Relationship(back_populates="reservation")
+    created_by: Optional[User] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "Reservation.created_by_id"},
+    )
+
+
+class TableReservation(SQLModel, table=True):
+    __tablename__ = "table_reservation"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    reservation_id: int = Field(foreign_key="reservation.id")
+    table_id: int = Field(foreign_key="restaurant_table.id")
+    status: ReservationStatus = Field(default=ReservationStatus.ACTIVE)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    reservation: Reservation = Relationship(back_populates="table_reservations")
+    table: RestaurantTable = Relationship(back_populates="table_reservations")
+
+
+class TableStatusLog(SQLModel, table=True):
+    __tablename__ = "table_status_log"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    table_id: int = Field(foreign_key="restaurant_table.id")
+    changed_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    old_status: TableStatus
+    new_status: TableStatus
+    changed_at: datetime = Field(default_factory=datetime.now)
+    note: Optional[str] = Field(default=None)
+
+    table: RestaurantTable = Relationship(back_populates="status_logs")
+    changed_by: Optional[User] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "TableStatusLog.changed_by_id"},
+    )
 
 
 class Order(OrderBase, table=True):
