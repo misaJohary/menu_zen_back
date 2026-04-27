@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, List, Optional
+from typing import Annotated, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlmodel import Session, select
@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from app.configs.database_configs import SessionDep
 from app.cores.permissions import require_permission
 from app.models.models import (
+    Order,
     Reservation,
     RestaurantTable,
     TableReservation,
@@ -14,8 +15,11 @@ from app.models.models import (
     User,
 )
 from app.schemas.auth_schemas import RoleName
+from app.schemas.order_shemas import OrderStatus, PaymentStatus
 from app.schemas.restaurant_table_schemas import (
     ReservationStatus,
+    ResetDailyRequest,
+    ResetDailySummary,
     RestaurantTableBase,
     RestaurantTableCreate,
     RestaurantTablePublic,
@@ -26,6 +30,11 @@ from app.schemas.restaurant_table_schemas import (
 )
 from app.services import permission_service
 from app.services.auth_service import get_current_active_user
+from app.services.table_status_service import (
+    active_table_reservation,
+    build_status_broadcast,
+    cascade_parent_reservation_status,
+)
 from app.services.ws_service import ConnectionManager, get_connection_manager
 
 
@@ -34,25 +43,11 @@ router = APIRouter(tags=["tables"])
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-_TERMINAL_RESERVATION_STATUSES = {
-    ReservationStatus.HONORED,
-    ReservationStatus.CANCELLED,
-    ReservationStatus.NO_SHOW,
-}
-
-
-def _active_table_reservation(session: Session, table_id: int) -> Optional[TableReservation]:
-    return session.exec(
-        select(TableReservation)
-        .where(TableReservation.table_id == table_id)
-        .where(TableReservation.status == ReservationStatus.ACTIVE)
-    ).first()
-
 
 def _serialize_table(session: Session, table: RestaurantTable) -> dict:
     """Build the RestaurantTablePublic-shaped dict for a table, including the
     currently-active reservation (if any) and a minimal server summary."""
-    active = _active_table_reservation(session, table.id)
+    active = active_table_reservation(session, table.id)
     active_dict = None
     if active is not None:
         reservation = active.reservation
@@ -90,61 +85,6 @@ def _serialize_table(session: Session, table: RestaurantTable) -> dict:
         "seats": table.seats,
         "server": server_dict,
         "active_reservation": active_dict,
-    }
-
-
-def _cascade_parent_reservation_status(
-    session: Session,
-    reservation_id: int,
-) -> None:
-    """If every TableReservation for a parent Reservation is terminal, update
-    the parent's status to match (all-honored → honored, etc.)."""
-    rows = session.exec(
-        select(TableReservation).where(TableReservation.reservation_id == reservation_id)
-    ).all()
-    if not rows:
-        return
-    statuses = {row.status for row in rows}
-    if not statuses.issubset(_TERMINAL_RESERVATION_STATUSES):
-        return
-    # All terminal — if a single terminal status dominates, use it; otherwise
-    # prefer HONORED over CANCELLED over NO_SHOW.
-    if len(statuses) == 1:
-        new_status = next(iter(statuses))
-    elif ReservationStatus.HONORED in statuses:
-        new_status = ReservationStatus.HONORED
-    elif ReservationStatus.CANCELLED in statuses:
-        new_status = ReservationStatus.CANCELLED
-    else:
-        new_status = ReservationStatus.NO_SHOW
-
-    parent = session.get(Reservation, reservation_id)
-    if parent is not None and parent.status != new_status:
-        parent.status = new_status
-        parent.updated_at = datetime.now()
-        session.add(parent)
-
-
-def _build_status_broadcast(
-    table: RestaurantTable,
-    old_status: TableStatus,
-    changed_by_id: Optional[int],
-    active: Optional[TableReservation],
-) -> dict:
-    reserved_at = None
-    if active is not None and active.reservation is not None:
-        reserved_at = active.reservation.reserved_at.isoformat()
-    return {
-        "type": "table_status_changed",
-        "table_id": table.id,
-        "table_name": table.name,
-        "old_status": old_status,
-        "new_status": table.status,
-        "server_id": table.server_id,
-        "waiting_since": table.waiting_since.isoformat() if table.waiting_since else None,
-        "reservation_at": reserved_at,
-        "changed_by_id": changed_by_id,
-        "timestamp": datetime.now().isoformat(),
     }
 
 
@@ -252,7 +192,7 @@ def change_table_status(
     old_status = table.status
 
     # ── Apply side effects ────────────────────────────────────────────────
-    active = _active_table_reservation(session, table.id)
+    active = active_table_reservation(session, table.id)
 
     if old_status == TableStatus.RESERVED and new_status != TableStatus.RESERVED:
         # Transitioning away from reserved — close the active link row.
@@ -319,16 +259,16 @@ def change_table_status(
     )
 
     if parent_reservation_id is not None:
-        _cascade_parent_reservation_status(session, parent_reservation_id)
+        cascade_parent_reservation_status(session, parent_reservation_id)
 
     session.commit()
     session.refresh(table)
 
-    refreshed_active = _active_table_reservation(session, table.id)
+    refreshed_active = active_table_reservation(session, table.id)
     background_tasks.add_task(
         manager.broadcast_to_restaurant,
         str(current_user.restaurant_id),
-        _build_status_broadcast(table, old_status, current_user.id, refreshed_active),
+        build_status_broadcast(table, old_status, current_user.id, refreshed_active),
     )
 
     return _serialize_table(session, table)
@@ -357,3 +297,125 @@ def read_table_logs(
         .where(TableStatusLog.table_id == table_id)
         .order_by(TableStatusLog.changed_at.desc())
     ).all()
+
+
+# ── Daily reset endpoint ──────────────────────────────────────────────────────
+
+@router.post(
+    "/tables/reset-daily",
+    response_model=ResetDailySummary,
+    dependencies=[require_permission("tables", "reset")],
+)
+def reset_tables_daily(
+    payload: ResetDailyRequest,
+    session: SessionDep,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    manager: ConnectionManager = Depends(get_connection_manager),
+):
+    """Start-of-day reset: free every non-free table, expire stale reservations,
+    and close lingering unpaid orders so the next service starts clean.
+
+    Future-dated reservations are intentionally left untouched — a booking for
+    tonight must survive a morning reset.
+    """
+    if current_user.restaurant_id is None:
+        raise HTTPException(status_code=400, detail="User is not attached to a restaurant")
+
+    cutoff = payload.cutoff or datetime.now()
+    restaurant_id = current_user.restaurant_id
+
+    tables = session.exec(
+        select(RestaurantTable).where(RestaurantTable.restaurant_id == restaurant_id)
+    ).all()
+    table_ids = [t.id for t in tables]
+
+    reservations_expired = 0
+    orders_closed = 0
+
+    if table_ids and payload.expire_past_reservations:
+        expirable = session.exec(
+            select(TableReservation)
+            .join(Reservation, Reservation.id == TableReservation.reservation_id)
+            .where(TableReservation.table_id.in_(table_ids))
+            .where(TableReservation.status == ReservationStatus.ACTIVE)
+            .where(Reservation.reserved_at < cutoff)
+        ).all()
+        affected_parents: set[int] = set()
+        for link in expirable:
+            link.status = ReservationStatus.NO_SHOW
+            link.updated_at = datetime.now()
+            session.add(link)
+            affected_parents.add(link.reservation_id)
+        reservations_expired = len(expirable)
+        for parent_id in affected_parents:
+            cascade_parent_reservation_status(session, parent_id)
+
+    if table_ids and payload.close_stale_orders:
+        stale_orders = session.exec(
+            select(Order)
+            .where(Order.restaurant_table_id.in_(table_ids))
+            .where(Order.payment_status != PaymentStatus.PAID)
+            .where(Order.order_status != OrderStatus.CANCELLED)
+            .where(Order.created_at < cutoff)
+        ).all()
+        for order in stale_orders:
+            order.order_status = OrderStatus.CANCELLED
+            order.updated_at = datetime.now()
+            session.add(order)
+        orders_closed = len(stale_orders)
+
+    tables_already_free = sum(1 for t in tables if t.status == TableStatus.FREE)
+    reset_records: list[tuple[RestaurantTable, TableStatus]] = []
+    for table in tables:
+        if table.status == TableStatus.FREE:
+            continue
+        old_status = table.status
+        table.status = TableStatus.FREE
+        table.server_id = None
+        table.waiting_since = None
+        table.updated_at = datetime.now()
+        session.add(table)
+        session.add(
+            TableStatusLog(
+                table_id=table.id,
+                changed_by_id=current_user.id,
+                old_status=old_status,
+                new_status=TableStatus.FREE,
+                note="daily reset",
+            )
+        )
+        reset_records.append((table, old_status))
+
+    session.commit()
+    for table, _ in reset_records:
+        session.refresh(table)
+
+    summary = ResetDailySummary(
+        restaurant_id=restaurant_id,
+        tables_reset=len(reset_records),
+        tables_already_free=tables_already_free,
+        reservations_expired=reservations_expired,
+        orders_closed=orders_closed,
+        reset_at=datetime.now(),
+    )
+
+    for table, old_status in reset_records:
+        refreshed_active = active_table_reservation(session, table.id)
+        background_tasks.add_task(
+            manager.broadcast_to_restaurant,
+            str(restaurant_id),
+            build_status_broadcast(table, old_status, current_user.id, refreshed_active),
+        )
+
+    background_tasks.add_task(
+        manager.broadcast_to_restaurant,
+        str(restaurant_id),
+        {
+            "type": "daily_reset",
+            "summary": summary.model_dump(mode="json"),
+            "timestamp": datetime.now().isoformat(),
+        },
+    )
+
+    return summary

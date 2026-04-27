@@ -239,6 +239,7 @@ class RestaurantTable(RestaurantTableBase, table=True):
 
     id: Union[int, None] = Field(default=None, primary_key=True)
     name: str
+    updated_at: datetime = Field(default_factory=datetime.now)
     orders: Union[List["Order"], None] = Relationship(back_populates="r_table")
     restaurant: Restaurant = Relationship(back_populates="tables")
     server: Optional[User] = Relationship(

@@ -84,3 +84,18 @@ class RestaurantTableStatusUpdate(SQLModel):
     reservation_phone: Optional[str] = None
     reservation_at: Optional[datetime] = None
     reservation_note: Optional[str] = None
+
+
+class ResetDailyRequest(SQLModel):
+    close_stale_orders: bool = True
+    expire_past_reservations: bool = True
+    cutoff: Optional[datetime] = None
+
+
+class ResetDailySummary(SQLModel):
+    restaurant_id: int
+    tables_reset: int
+    tables_already_free: int
+    reservations_expired: int
+    orders_closed: int
+    reset_at: datetime
