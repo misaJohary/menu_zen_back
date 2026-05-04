@@ -4,7 +4,19 @@ from datetime import datetime
 from sqlmodel import Field, Relationship, SQLModel, UniqueConstraint
 
 from app.schemas.auth_schemas import UserBase
+from app.schemas.call_schemas import (
+    CallParticipantBase,
+    CallParticipantState,
+    CallSessionBase,
+    CallStatus,
+)
 from app.schemas.category_schemas import CategoryBase, CategoryTranslationBase
+from app.schemas.conversation_schemas import (
+    ConversationBase,
+    ConversationType,
+    MessageBase,
+    MessageType,
+)
 from app.schemas.kitchen_schemas import KitchenBase
 from app.schemas.menu_item_schemas import MenuItemBase, MenuItemTranslationBase
 from app.schemas.menu_schemas import MenuBase, MenuTranslationBase
@@ -233,6 +245,16 @@ class User(UserBase, table=True):
         sa_relationship_kwargs={"foreign_keys": "RestaurantTable.server_id"},
     )
 
+    # Messaging / calls
+    sent_messages: List["Message"] = Relationship(
+        back_populates="sender",
+        sa_relationship_kwargs={"foreign_keys": "Message.sender_id"},
+    )
+    conversation_links: List["ConversationParticipant"] = Relationship(
+        back_populates="user"
+    )
+    call_links: List["CallParticipant"] = Relationship(back_populates="user")
+
 
 class RestaurantTable(RestaurantTableBase, table=True):
     __tablename__ = "restaurant_table"
@@ -309,3 +331,106 @@ class Order(OrderBase, table=True):
     r_table: RestaurantTable = Relationship(back_populates="orders")
     server: Union[User, None] = Relationship(back_populates="orders")
     order_menu_items: Union[List[OrderMenuItem], None] = Relationship(back_populates="order")
+
+
+# ── Messaging / Calls ─────────────────────────────────────────────────────────
+
+class Conversation(ConversationBase, table=True):
+    __tablename__ = "conversation"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    restaurant_id: Optional[int] = Field(
+        default=None, foreign_key="restaurant.id", ondelete="CASCADE"
+    )
+    created_by_id: Optional[int] = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    participants: List["ConversationParticipant"] = Relationship(
+        back_populates="conversation",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    messages: List["Message"] = Relationship(back_populates="conversation")
+    calls: List["CallSession"] = Relationship(back_populates="conversation")
+
+
+class ConversationParticipant(SQLModel, table=True):
+    __tablename__ = "conversation_participant"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    conversation_id: int = Field(foreign_key="conversation.id", ondelete="CASCADE")
+    user_id: int = Field(foreign_key="user.id", ondelete="CASCADE")
+    joined_at: datetime = Field(default_factory=datetime.now)
+    left_at: Optional[datetime] = None
+    is_admin: bool = Field(default=False)
+    last_read_message_id: Optional[int] = Field(
+        default=None, foreign_key="message.id"
+    )
+    muted: bool = Field(default=False)
+
+    conversation: Optional[Conversation] = Relationship(back_populates="participants")
+    user: Optional[User] = Relationship(back_populates="conversation_links")
+
+    class Config:
+        table_args = (
+            UniqueConstraint("conversation_id", "user_id", name="uq_conv_user"),
+        )
+
+
+class Message(MessageBase, table=True):
+    __tablename__ = "message"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    conversation_id: int = Field(foreign_key="conversation.id", ondelete="CASCADE")
+    sender_id: Optional[int] = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+    reply_to_id: Optional[int] = Field(
+        default=None, foreign_key="message.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=datetime.now)
+    edited_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
+
+    conversation: Optional[Conversation] = Relationship(back_populates="messages")
+    sender: Optional[User] = Relationship(
+        back_populates="sent_messages",
+        sa_relationship_kwargs={"foreign_keys": "Message.sender_id"},
+    )
+    reply_to: Optional["Message"] = Relationship(
+        sa_relationship_kwargs={"remote_side": "Message.id"},
+    )
+
+
+class CallSession(CallSessionBase, table=True):
+    __tablename__ = "call_session"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    conversation_id: int = Field(foreign_key="conversation.id", ondelete="CASCADE")
+    started_by_id: Optional[int] = Field(
+        default=None, foreign_key="user.id", ondelete="SET NULL"
+    )
+
+    conversation: Optional[Conversation] = Relationship(back_populates="calls")
+    participants: List["CallParticipant"] = Relationship(
+        back_populates="call",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+class CallParticipant(CallParticipantBase, table=True):
+    __tablename__ = "call_participant"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    call_id: int = Field(foreign_key="call_session.id", ondelete="CASCADE")
+    user_id: int = Field(foreign_key="user.id", ondelete="CASCADE")
+
+    call: Optional[CallSession] = Relationship(back_populates="participants")
+    user: Optional[User] = Relationship(back_populates="call_links")
+
+    class Config:
+        table_args = (
+            UniqueConstraint("call_id", "user_id", name="uq_call_user"),
+        )

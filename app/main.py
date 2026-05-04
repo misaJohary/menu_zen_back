@@ -66,6 +66,14 @@ _ALL_PERMISSIONS: list[tuple[str, str]] = [
     ("kitchens", "read"),
     ("kitchens", "update"),
     ("kitchens", "delete"),
+    ("messages",      "read"),
+    ("messages",      "create"),
+    ("messages",      "delete"),
+    ("conversations", "create"),
+    ("conversations", "read"),
+    ("conversations", "update"),
+    ("calls",         "create"),
+    ("calls",         "read"),
 ]
 
 _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
@@ -78,12 +86,18 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
         ("tables",   "manage"), ("tables",   "read"),   ("tables",   "update"), ("tables", "reset"),
         ("reports",  "read"),
         ("kitchens", "create"), ("kitchens", "read"), ("kitchens", "update"), ("kitchens", "delete"),
+        ("messages", "read"), ("messages", "create"), ("messages", "delete"),
+        ("conversations", "create"), ("conversations", "read"), ("conversations", "update"),
+        ("calls", "create"), ("calls", "read"),
     ],
     "cashier": [
         ("menu",     "read"),
         ("orders",   "create"), ("orders",  "read"),    ("orders",   "update"),
         ("payments", "create"), ("payments","read"),
         ("tables",   "read"),
+        ("messages", "read"), ("messages", "create"), ("messages", "delete"),
+        ("conversations", "create"), ("conversations", "read"), ("conversations", "update"),
+        ("calls", "create"), ("calls", "read"),
     ],
     "server": [
         ("menu", "create"), ("menu", "read"),
@@ -91,12 +105,18 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
         ("tables", "manage"), ("tables", "read"), ("tables", "update"),
         ("payments", "read"),
         ("kitchens", "read"),
+        ("messages", "read"), ("messages", "create"), ("messages", "delete"),
+        ("conversations", "create"), ("conversations", "read"), ("conversations", "update"),
+        ("calls", "create"), ("calls", "read"),
     ],
     "cook": [
         ("menu",     "read"),
         ("orders",   "read"),
         ("tables",   "read"),
         ("kitchens", "read"),
+        ("messages", "read"), ("messages", "create"), ("messages", "delete"),
+        ("conversations", "create"), ("conversations", "read"), ("conversations", "update"),
+        ("calls", "create"), ("calls", "read"),
     ],
 }
 
