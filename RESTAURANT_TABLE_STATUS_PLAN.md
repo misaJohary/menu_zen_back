@@ -110,6 +110,7 @@ class TableStatus(str, Enum):
     RESERVED = "reserved"
     WAITING  = "waiting"
     ASSIGNED = "assigned"
+    DIRTY = "dirty"
 
 
 class ReservationStatus(str, Enum):
