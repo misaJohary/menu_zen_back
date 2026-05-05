@@ -1,0 +1,26 @@
+{$DOMAIN} {
+    encode zstd gzip
+
+    @ws {
+        header Connection *Upgrade*
+        header Upgrade    websocket
+    }
+    reverse_proxy @ws api:8000
+
+    reverse_proxy /uploads/* api:8000
+
+    reverse_proxy api:8000 {
+        header_up X-Real-IP        {remote_host}
+        header_up X-Forwarded-For  {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options    "nosniff"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    tls {$ACME_EMAIL}
+}

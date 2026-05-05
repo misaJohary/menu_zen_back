@@ -23,6 +23,7 @@ MarkupSafe==3.0.2
 mdurl==0.1.2
 passlib==1.7.4
 phonenumbers==9.0.10
+psycopg[binary]==3.2.3
 pydantic==2.11.7
 pydantic-extra-types==2.10.5
 pydantic-settings==2.10.1
