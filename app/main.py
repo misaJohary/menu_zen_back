@@ -112,7 +112,7 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
     ],
     "cook": [
         ("menu",     "read"),
-        ("orders",   "read"),
+        ("orders",   "read"), ("orders", "update"),
         ("tables",   "read"),
         ("kitchens", "read"),
         ("messages", "read"), ("messages", "create"), ("messages", "delete"),
