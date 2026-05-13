@@ -21,6 +21,7 @@ from app.schemas.menu_schemas import MenuPublic
 from app.schemas.restaurant_schemas import RestaurantPublic, RestaurantType
 from app.schemas.review_schemas import ReviewCustomer, ReviewPublic, ReviewSummary
 from app.services.geo_service import nearby_restaurants_query
+from app.services.opening_hours_service import NextOpening, compute_open_status
 
 
 def _get_visible_restaurant(session: Session, restaurant_id: int) -> Restaurant:
@@ -60,6 +61,8 @@ class RestaurantSearchResponse(BaseModel):
 class RestaurantDetailPublic(RestaurantPublic):
     avg_rating: Optional[float] = None
     review_count: int = 0
+    is_open_now: bool = False
+    next_opening: Optional[NextOpening] = None
 
 
 @router.get("/restaurants/search", response_model=RestaurantSearchResponse)
@@ -99,12 +102,16 @@ def get_restaurant_public(
     session: SessionDep,
 ) -> RestaurantDetailPublic:
     restaurant = _get_visible_restaurant(session, restaurant_id)
-    data = RestaurantPublic.model_validate(restaurant, from_attributes=True).model_dump()
+    public = RestaurantPublic.model_validate(restaurant, from_attributes=True)
+    data = public.model_dump()
     avg_rating, review_count = _review_aggregate(session, restaurant_id)
+    is_open_now, next_opening = compute_open_status(public.opening_hours)
     return RestaurantDetailPublic(
         **data,
         avg_rating=round(avg_rating, 2) if avg_rating is not None else None,
         review_count=review_count,
+        is_open_now=is_open_now,
+        next_opening=next_opening,
     )
 
 
