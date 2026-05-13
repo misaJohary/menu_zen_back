@@ -7,6 +7,7 @@ from app.models.models import Restaurant, User
 from app.schemas.auth_schemas import RoleName, Token, UserCreate, UserPublic, UserRestaurant
 from app.schemas.restaurant_schemas import RestaurantCreate, RestaurantUpdate, RestaurantPublic
 from app.services.auth_service import create_access_token, get_current_active_user, get_password_hash, get_role_id_by_name
+from app.services.geo_service import make_point
 
 from app.configs.auth_configs import settings
 from app.cores.permissions import require_permission
@@ -18,6 +19,8 @@ router = APIRouter(tags=["restaurants"])
 def create_restaurant(restaurant: RestaurantCreate, user: UserCreate, session: SessionDep):
     #create restaurant
     db_restaurant= Restaurant.model_validate(restaurant)
+    if db_restaurant.lat is not None and db_restaurant.long is not None:
+        db_restaurant.location = make_point(db_restaurant.lat, db_restaurant.long)
 
     #create user
     role_id = user.role_id
@@ -39,7 +42,12 @@ def create_restaurant(restaurant: RestaurantCreate, user: UserCreate, session: S
     session.refresh(db_user)
 
     access_token = create_access_token(
-        data={"sub": db_user.username, "restaurant_id": db_restaurant.id, "user_id": db_user.id}
+        data={
+            "sub": db_user.username,
+            "restaurant_id": db_restaurant.id,
+            "user_id": db_user.id,
+            "typ": "staff",
+        }
     )
 
     return UserRestaurant(user=db_user.model_dump(), restaurant=db_user.restaurant, token=Token(access_token=access_token, token_type="bearer"))
@@ -62,7 +70,16 @@ def update_restaurant(
     update_data = restaurant_update.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(db_restaurant, field, value)
-    
+
+    # Recompute location whenever lat/long changes — they remain the
+    # editable source of truth.
+    if (
+        ("lat" in update_data or "long" in update_data)
+        and db_restaurant.lat is not None
+        and db_restaurant.long is not None
+    ):
+        db_restaurant.location = make_point(db_restaurant.lat, db_restaurant.long)
+
     session.add(db_restaurant)
     session.commit()
     session.refresh(db_restaurant)

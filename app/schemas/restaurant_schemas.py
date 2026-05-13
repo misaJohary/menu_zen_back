@@ -28,6 +28,7 @@ class RestaurantBase(SQLModel):
     city: str
     lat: float
     long: float
+    disabled: bool = Field(default=False)
 
 class RestaurantCreate(RestaurantBase):
     pass
@@ -46,6 +47,7 @@ class RestaurantUpdate(SQLModel):
     city: Optional[str]= Field(default= None)
     lat: Optional[float]= Field(default= None)
     long: Optional[float]= Field(default= None)
+    disabled: Optional[bool]= Field(default= None)
 
 class RestaurantPublic(RestaurantBase):
     id: int

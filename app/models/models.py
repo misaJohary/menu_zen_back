@@ -1,6 +1,8 @@
 from enum import Enum
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 from datetime import datetime
+from geoalchemy2 import Geography
+from sqlalchemy import CheckConstraint, Column
 from sqlmodel import Field, Relationship, SQLModel, UniqueConstraint
 
 from app.schemas.auth_schemas import UserBase
@@ -10,6 +12,7 @@ from app.schemas.call_schemas import (
     CallSessionBase,
     CallStatus,
 )
+from app.enums.order_type import OrderType
 from app.schemas.category_schemas import CategoryBase, CategoryTranslationBase
 from app.schemas.conversation_schemas import (
     ConversationBase,
@@ -166,6 +169,11 @@ class MenuItem(MenuItemBase, table=True):
 class Restaurant(RestaurantBase, table=True):
     id: Union[int, None] = Field(default=None, primary_key=True)
 
+    location: Optional[Any] = Field(
+        default=None,
+        sa_column=Column(Geography(geometry_type="POINT", srid=4326), nullable=True),
+    )
+
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
@@ -175,6 +183,8 @@ class Restaurant(RestaurantBase, table=True):
     menu_items: Union[List[MenuItem], None] = Relationship(back_populates="restaurant")
     users: Union[List["User"], None] = Relationship(back_populates="restaurant")
     kitchens: list["Kitchen"] = Relationship(back_populates="restaurant")
+    favorites: List["Favorite"] = Relationship(back_populates="restaurant")
+    reviews: List["RestaurantReview"] = Relationship(back_populates="restaurant")
 
 
 class CategoryTranslation(CategoryTranslationBase, table=True):
@@ -256,6 +266,63 @@ class User(UserBase, table=True):
     call_links: List["CallParticipant"] = Relationship(back_populates="user")
 
 
+class Customer(SQLModel, table=True):
+    __tablename__ = "customer"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(max_length=255, unique=True, index=True)
+    phone: Optional[str] = Field(default=None, max_length=32, index=True)
+    full_name: Optional[str] = Field(default=None, max_length=120)
+    hashed_psd: str
+    disabled: bool = Field(default=False)
+    avatar: Optional[str] = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    favorites: List["Favorite"] = Relationship(back_populates="customer")
+    reviews: List["RestaurantReview"] = Relationship(back_populates="customer")
+    reservations: List["Reservation"] = Relationship(back_populates="customer")
+    orders: List["Order"] = Relationship(back_populates="customer")
+
+
+class Favorite(SQLModel, table=True):
+    __tablename__ = "favorite"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    customer_id: int = Field(foreign_key="customer.id", ondelete="CASCADE", index=True)
+    restaurant_id: int = Field(foreign_key="restaurant.id", ondelete="CASCADE", index=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    customer: Optional[Customer] = Relationship(back_populates="favorites")
+    restaurant: Optional["Restaurant"] = Relationship(back_populates="favorites")
+
+    __table_args__ = (
+        UniqueConstraint("customer_id", "restaurant_id", name="uq_favorite_customer_restaurant"),
+    )
+
+
+class RestaurantReview(SQLModel, table=True):
+    __tablename__ = "restaurant_review"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    customer_id: int = Field(foreign_key="customer.id", ondelete="CASCADE", index=True)
+    restaurant_id: int = Field(foreign_key="restaurant.id", ondelete="CASCADE", index=True)
+    rating: int
+    comment: Optional[str] = Field(default=None, max_length=2000)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    customer: Optional[Customer] = Relationship(back_populates="reviews")
+    restaurant: Optional["Restaurant"] = Relationship(back_populates="reviews")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "customer_id", "restaurant_id", name="uq_review_customer_restaurant"
+        ),
+        CheckConstraint("rating BETWEEN 1 AND 5", name="ck_review_rating_range"),
+    )
+
+
 class RestaurantTable(RestaurantTableBase, table=True):
     __tablename__ = "restaurant_table"
 
@@ -282,6 +349,13 @@ class Reservation(SQLModel, table=True):
     status: ReservationStatus = Field(default=ReservationStatus.ACTIVE)
     note: Optional[str] = Field(default=None)
     created_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    customer_id: Optional[int] = Field(
+        default=None, foreign_key="customer.id", ondelete="SET NULL", index=True
+    )
+    restaurant_id: Optional[int] = Field(
+        default=None, foreign_key="restaurant.id", ondelete="CASCADE", index=True
+    )
+    party_size: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
@@ -289,6 +363,8 @@ class Reservation(SQLModel, table=True):
     created_by: Optional[User] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "Reservation.created_by_id"},
     )
+    customer: Optional[Customer] = Relationship(back_populates="reservations")
+    restaurant: Optional["Restaurant"] = Relationship()
 
 
 class TableReservation(SQLModel, table=True):
@@ -328,9 +404,11 @@ class Order(OrderBase, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-    r_table: RestaurantTable = Relationship(back_populates="orders")
+    r_table: Optional[RestaurantTable] = Relationship(back_populates="orders")
     server: Union[User, None] = Relationship(back_populates="orders")
     order_menu_items: Union[List[OrderMenuItem], None] = Relationship(back_populates="order")
+    customer: Optional[Customer] = Relationship(back_populates="orders")
+    restaurant: Optional["Restaurant"] = Relationship()
 
 
 # ── Messaging / Calls ─────────────────────────────────────────────────────────

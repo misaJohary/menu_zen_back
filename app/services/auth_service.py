@@ -35,7 +35,7 @@ def get_role_id_by_name(role_name: str, session: Session) -> int:
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", scheme_name="StaffOAuth2")
 
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -58,11 +58,15 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload= jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm], options={"verify_sub": False} ) 
+        payload= jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm], options={"verify_sub": False} )
         user_id= payload.get("user_id")
         if user_id is None:
             raise credentials_exception
-        
+        # Reject customer tokens at staff endpoints. Legacy staff tokens without
+        # the typ claim are still accepted for backward compatibility.
+        if payload.get("typ") == "customer":
+            raise credentials_exception
+
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError as e:

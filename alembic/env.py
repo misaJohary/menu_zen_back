@@ -29,6 +29,23 @@ if config.config_file_name is not None:
 
 target_metadata = SQLModel.metadata
 
+
+# PostGIS ships internal tables/views (spatial_ref_sys, geometry_columns,
+# geography_columns) and indexes (idx_*_geom) that are NOT part of our
+# application schema. Without this filter, autogenerate keeps trying to drop
+# them on every run.
+_POSTGIS_INTERNAL = {"spatial_ref_sys", "geometry_columns", "geography_columns"}
+
+
+def _include_object(obj, name, type_, reflected, compare_to):
+    if type_ == "table" and name in _POSTGIS_INTERNAL:
+        return False
+    if type_ == "column" and getattr(obj.table, "name", None) in _POSTGIS_INTERNAL:
+        return False
+    if type_ == "index" and getattr(obj.table, "name", None) in _POSTGIS_INTERNAL:
+        return False
+    return True
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -89,6 +106,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             render_as_batch=url.startswith("sqlite"),
             compare_type=True,
+            include_object=_include_object,
         )
 
         with context.begin_transaction():

@@ -18,11 +18,17 @@ from app.models.models import (
 from app.routers import (
     auth,
     categories,
+    customers_auth,
+    customers_favorites,
+    customers_orders,
+    customers_reservations,
+    customers_reviews,
     kitchens,
     languages,
     menu,
     menu_items,
     orders,
+    public_restaurants,
     restaurant,
     restaurant_table,
     stats,
@@ -280,6 +286,12 @@ app.include_router(languages.router)
 app.include_router(ws_connect.router)
 app.include_router(stats.router)
 app.include_router(admin_permissions.router)   # ← new RBAC admin router
+app.include_router(customers_auth.router)
+app.include_router(customers_favorites.router)
+app.include_router(customers_orders.router)
+app.include_router(customers_reservations.router)
+app.include_router(customers_reviews.router)
+app.include_router(public_restaurants.router)
 
 
 @app.get("/")
