@@ -22,6 +22,7 @@ from app.schemas.order_shemas import (
     PaymentStatus,
 )
 from app.services.customer_auth_service import get_current_customer
+from app.services.email_service import DeliveryEmailItem, send_delivery_request_email
 from app.services.ws_service import ConnectionManager, get_connection_manager
 
 
@@ -48,12 +49,16 @@ def _to_public(order: Order) -> CustomerOrderPublic:
         id=order.id,
         restaurant_id=order.restaurant_id,
         restaurant_table_id=order.restaurant_table_id,
+        restaurant_table_name=order.r_table.name if order.r_table is not None else None,
         order_type=order.order_type,
         order_status=order.order_status,
         payment_status=order.payment_status,
         contact_name=order.contact_name,
         contact_phone=order.contact_phone,
+        kitchen_note=order.kitchen_note,
         scheduled_for=order.scheduled_for,
+        delivery_address=order.delivery_address,
+        delivery_notes=order.delivery_notes,
         total_amount=float(order.total_amount) if order.total_amount is not None else None,
         items=items,
         created_at=order.created_at,
@@ -95,6 +100,22 @@ def create_order(
                 detail="Table does not belong to this restaurant",
             )
 
+    # Delivery requires a phone number and a destination address so the
+    # restaurant can actually reach the customer and dispatch the order.
+    if payload.order_type == OrderType.DELIVERY:
+        contact_phone = (payload.contact_phone or current.phone or "").strip()
+        delivery_address = (payload.delivery_address or "").strip()
+        if not contact_phone:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="contact_phone is required for delivery orders",
+            )
+        if not delivery_address:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="delivery_address is required for delivery orders",
+            )
+
     # Validate every menu_item_id in a single IN query.
     item_ids = [it.menu_item_id for it in payload.items]
     menu_items = session.exec(
@@ -134,7 +155,18 @@ def create_order(
         customer_id=current.id,
         contact_name=payload.contact_name or current.full_name,
         contact_phone=payload.contact_phone or current.phone,
+        kitchen_note=payload.kitchen_note,
         scheduled_for=payload.scheduled_for,
+        delivery_address=(
+            payload.delivery_address
+            if payload.order_type == OrderType.DELIVERY
+            else None
+        ),
+        delivery_notes=(
+            payload.delivery_notes
+            if payload.order_type == OrderType.DELIVERY
+            else None
+        ),
     )
     session.add(order)
     session.flush()  # get order.id
@@ -171,6 +203,35 @@ def create_order(
             "message": f"New customer order #{order.id}",
         },
     )
+
+    if order.order_type == OrderType.DELIVERY and restaurant.email:
+        email_items: list[DeliveryEmailItem] = []
+        for it in payload.items:
+            mi = by_id[it.menu_item_id]
+            translation = mi.translations[0] if mi.translations else None
+            item_name = translation.name if translation else f"Item #{mi.id}"
+            email_items.append(
+                DeliveryEmailItem(
+                    name=item_name,
+                    quantity=it.quantity,
+                    unit_price=float(mi.price),
+                    note=it.note,
+                )
+            )
+        background_tasks.add_task(
+            send_delivery_request_email,
+            restaurant_email=restaurant.email,
+            restaurant_name=restaurant.name,
+            order_id=order.id,
+            customer_name=order.contact_name or current.full_name or current.email,
+            customer_phone=order.contact_phone or current.phone or "",
+            delivery_address=order.delivery_address or "",
+            delivery_notes=order.delivery_notes,
+            scheduled_for=order.scheduled_for,
+            total_amount=float(order.total_amount) if order.total_amount is not None else None,
+            items=email_items,
+        )
+
     return public
 
 
