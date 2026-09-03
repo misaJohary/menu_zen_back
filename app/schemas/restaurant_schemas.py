@@ -4,6 +4,7 @@ from typing import List, Optional, Union
 from zoneinfo import available_timezones
 
 from pydantic import BaseModel, EmailStr, HttpUrl, field_validator, model_validator
+from sqlalchemy.types import TypeDecorator
 from sqlmodel import JSON, Column, Field, SQLModel
 
 from pydantic_extra_types.phone_numbers import PhoneNumber
@@ -70,6 +71,23 @@ class OpeningHours(BaseModel):
         return self
 
 
+class OpeningHoursJSON(TypeDecorator):
+    impl = JSON
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        if isinstance(value, OpeningHours):
+            return value.model_dump()
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return OpeningHours.model_validate(value)
+
+
 class RestaurantType(str, Enum):
     FASTFOOD = "fastfood"
     CASUAL = "casual"
@@ -85,7 +103,7 @@ class RestaurantBase(SQLModel):
     cover: Optional[str]= None
     pictures: Optional[List[str]]= Field(default= [],sa_column=Column(JSON))
     social_media: Optional[List[str]]= Field(default= [],sa_column=Column(JSON))
-    opening_hours: Optional[OpeningHours] = Field(default=None, sa_column=Column(JSON))
+    opening_hours: Optional[OpeningHours] = Field(default=None, sa_column=Column(OpeningHoursJSON))
     phone: PhoneNumber
     email: EmailStr
     city: str
@@ -105,7 +123,7 @@ class RestaurantUpdate(SQLModel):
     cover: Optional[str]= Field(default= None)
     pictures: Optional[List[str]]= Field(default= None, sa_column=Column(JSON))
     social_media: Optional[List[HttpUrl]]= Field(default= None, sa_column=Column(JSON))
-    opening_hours: Optional[OpeningHours] = Field(default=None, sa_column=Column(JSON))
+    opening_hours: Optional[OpeningHours] = Field(default=None, sa_column=Column(OpeningHoursJSON))
     phone: Optional[PhoneNumber]= Field(default= None)
     email: Optional[EmailStr]= Field(default= None)
     city: Optional[str]= Field(default= None)

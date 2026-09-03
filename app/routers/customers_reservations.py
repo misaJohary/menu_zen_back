@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlmodel import select
 
 from app.configs.database_configs import SessionDep
@@ -9,7 +9,6 @@ from app.models.models import (
     Customer,
     Reservation,
     Restaurant,
-    TableReservation,
 )
 from app.schemas.reservation_schemas import (
     CustomerReservationCreate,
@@ -17,8 +16,9 @@ from app.schemas.reservation_schemas import (
     TableAssignmentPublic,
 )
 from app.schemas.restaurant_schemas import RestaurantPublic
-from app.schemas.restaurant_table_schemas import ReservationStatus
+from app.schemas.restaurant_table_schemas import ReservationStatus, TableReservationStatus
 from app.services.customer_auth_service import get_current_customer
+from app.services.email_service import send_reservation_request_email
 
 
 router = APIRouter(prefix="/customers/me/reservations", tags=["customers"])
@@ -47,6 +47,7 @@ def _to_public(reservation: Reservation) -> CustomerReservationPublic:
 def create_reservation(
     payload: CustomerReservationCreate,
     session: SessionDep,
+    background_tasks: BackgroundTasks,
     current: Annotated[Customer, Depends(get_current_customer)],
 ) -> CustomerReservationPublic:
     restaurant = session.get(Restaurant, payload.restaurant_id)
@@ -56,16 +57,29 @@ def create_reservation(
             detail="Restaurant not found",
         )
 
-    # Copy name and phone from the customer profile so staff still see them
-    # alongside legacy staff-created reservations.
-    name = current.full_name or current.email
-    phone = current.phone or ""
+    now = datetime.now(timezone.utc)
+    reserved_at = payload.reserved_at
+    reserved_at_cmp = (
+        reserved_at.replace(tzinfo=timezone.utc)
+        if reserved_at.tzinfo is None
+        else reserved_at
+    )
+    if reserved_at_cmp <= now:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="reserved_at must be in the future",
+        )
 
+    if current.phone is None:
+        current.phone = payload.phone
+        session.add(current)
+
+    name = current.full_name or current.email
     reservation = Reservation(
         name=name,
-        phone=phone,
-        reserved_at=payload.reserved_at,
-        status=ReservationStatus.ACTIVE,
+        phone=payload.phone,
+        reserved_at=reserved_at,
+        status=ReservationStatus.WAITING,
         note=payload.note,
         customer_id=current.id,
         restaurant_id=payload.restaurant_id,
@@ -74,6 +88,19 @@ def create_reservation(
     session.add(reservation)
     session.commit()
     session.refresh(reservation)
+
+    if restaurant.email:
+        background_tasks.add_task(
+            send_reservation_request_email,
+            restaurant_email=restaurant.email,
+            restaurant_name=restaurant.name,
+            customer_name=name,
+            customer_phone=payload.phone,
+            reserved_at=reservation.reserved_at,
+            party_size=payload.party_size,
+            note=payload.note,
+        )
+
     return _to_public(reservation)
 
 
@@ -127,21 +154,20 @@ def cancel_my_reservation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Reservation not found",
         )
-    if reservation.status == ReservationStatus.CANCELLED:
+    if reservation.status == ReservationStatus.CANCELED:
         return _to_public(reservation)
-    if reservation.status not in {ReservationStatus.ACTIVE}:
+    if reservation.status not in {ReservationStatus.WAITING, ReservationStatus.ACCEPTED}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot cancel reservation in status '{reservation.status}'",
         )
 
-    reservation.status = ReservationStatus.CANCELLED
+    reservation.status = ReservationStatus.CANCELED
     reservation.updated_at = datetime.now()
     session.add(reservation)
 
-    # Cascade cancellation to any existing table assignments.
     for tr in reservation.table_reservations or []:
-        tr.status = ReservationStatus.CANCELLED
+        tr.status = TableReservationStatus.CANCELLED
         tr.updated_at = datetime.now()
         session.add(tr)
 
