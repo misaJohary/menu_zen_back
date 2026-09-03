@@ -1,9 +1,12 @@
 import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
 
@@ -28,8 +31,10 @@ from app.routers import (
     menu,
     menu_items,
     orders,
+    public_orders,
     public_restaurants,
     restaurant,
+    restaurant_reservations,
     restaurant_table,
     stats,
     ws_connect,
@@ -68,6 +73,7 @@ _ALL_PERMISSIONS: list[tuple[str, str]] = [
     ("tables",   "read"),
     ("tables",   "update"),
     ("tables",   "reset"),
+    ("reservations", "manage"),
     ("reports",  "read"),
     ("kitchens", "create"),
     ("kitchens", "read"),
@@ -91,6 +97,7 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
         ("orders",   "create"), ("orders",   "read"),   ("orders",   "update"), ("orders", "delete"),
         ("payments", "create"), ("payments", "read"),
         ("tables",   "manage"), ("tables",   "read"),   ("tables",   "update"), ("tables", "reset"),
+        ("reservations", "manage"),
         ("reports",  "read"),
         ("kitchens", "create"), ("kitchens", "read"), ("kitchens", "update"), ("kitchens", "delete"),
         ("messages", "read"), ("messages", "create"), ("messages", "delete"),
@@ -110,6 +117,7 @@ _ROLE_PERMISSIONS: dict[str, list[tuple[str, str]]] = {
         ("menu", "create"), ("menu", "read"),
         ("orders", "create"), ("orders", "read"), ("orders", "update"), ("orders", "delete"),
         ("tables", "manage"), ("tables", "read"), ("tables", "update"),
+        ("reservations", "manage"),
         ("payments", "read"),
         ("kitchens", "read"),
         ("messages", "read"), ("messages", "create"), ("messages", "delete"),
@@ -259,7 +267,58 @@ async def lifespan(app: FastAPI):
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+
+# ── Protected Documentation Endpoints ──────────────────────────────────────────
+
+_doc_security = HTTPBasic()
+
+
+def verify_docs_credentials(credentials: HTTPBasicCredentials = Depends(_doc_security)):
+    docs_user = settings.docs_username
+    docs_pass = settings.docs_password
+
+    is_user_correct = secrets.compare_digest(
+        credentials.username.encode("utf-8"), docs_user.encode("utf-8")
+    )
+    is_pass_correct = secrets.compare_digest(
+        credentials.password.encode("utf-8"), docs_pass.encode("utf-8")
+    )
+
+    if not (is_user_correct and is_pass_correct):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect documentation credentials",
+            headers={"WWW-Authenticate": 'Basic realm="MenuZen API Documentation"'},
+        )
+    return credentials.username
+
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_protected_openapi(username: str = Depends(verify_docs_credentials)):
+    return app.openapi()
+
+
+@app.get("/docs", include_in_schema=False)
+async def get_protected_swagger_ui(username: str = Depends(verify_docs_credentials)):
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="MenuZen API - Swagger UI",
+    )
+
+
+@app.get("/redoc", include_in_schema=False)
+async def get_protected_redoc(username: str = Depends(verify_docs_credentials)):
+    return get_redoc_html(
+        openapi_url="/openapi.json",
+        title="MenuZen API - ReDoc",
+    )
+
 
 _origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
@@ -282,6 +341,7 @@ app.include_router(kitchens.router)
 app.include_router(menu_items.router)
 app.include_router(orders.router)
 app.include_router(restaurant_table.router)
+app.include_router(restaurant_reservations.router)
 app.include_router(languages.router)
 app.include_router(ws_connect.router)
 app.include_router(stats.router)
@@ -292,6 +352,7 @@ app.include_router(customers_orders.router)
 app.include_router(customers_reservations.router)
 app.include_router(customers_reviews.router)
 app.include_router(public_restaurants.router)
+app.include_router(public_orders.router)
 
 
 @app.get("/")

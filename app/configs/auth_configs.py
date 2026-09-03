@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     super_admin_username: str = os.getenv("SUPER_ADMIN_USERNAME", "super_admin")
     super_admin_password: Optional[str] = os.getenv("SUPER_ADMIN_PASSWORD")
     
+    # Docs HTTP Basic Auth Defaults
+    docs_username: str = os.getenv("DOCS_USERNAME", "admin")
+    docs_password: str = os.getenv("DOCS_PASSWORD", "change-me-in-production")
+    
     class Config:
         env_file = ".env"
 
