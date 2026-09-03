@@ -25,6 +25,7 @@ from app.schemas.restaurant_table_schemas import (
     RestaurantTablePublic,
     RestaurantTableStatusUpdate,
     RestaurantTableUpdate,
+    TableReservationStatus,
     TableStatus,
     TableStatusLogPublic,
 )
@@ -33,7 +34,6 @@ from app.services.auth_service import get_current_active_user
 from app.services.table_status_service import (
     active_table_reservation,
     build_status_broadcast,
-    cascade_parent_reservation_status,
 )
 from app.services.ws_service import ConnectionManager, get_connection_manager
 
@@ -195,20 +195,14 @@ def change_table_status(
     active = active_table_reservation(session, table.id)
 
     if old_status == TableStatus.RESERVED and new_status != TableStatus.RESERVED:
-        # Transitioning away from reserved — close the active link row.
         if active is not None:
             active.status = (
-                ReservationStatus.HONORED
+                TableReservationStatus.HONORED
                 if new_status in (TableStatus.WAITING, TableStatus.ASSIGNED)
-                else ReservationStatus.CANCELLED
+                else TableReservationStatus.CANCELLED
             )
             active.updated_at = datetime.now()
             session.add(active)
-            parent_reservation_id = active.reservation_id
-        else:
-            parent_reservation_id = None
-    else:
-        parent_reservation_id = None
 
     if new_status == TableStatus.WAITING:
         table.waiting_since = datetime.now()
@@ -234,6 +228,7 @@ def change_table_status(
                 reserved_at=payload.reservation_at,
                 note=payload.reservation_note,
                 created_by_id=current_user.id,
+                status=ReservationStatus.ACCEPTED,
             )
             session.add(reservation)
             session.flush()
@@ -241,7 +236,7 @@ def change_table_status(
         link = TableReservation(
             reservation_id=reservation.id,
             table_id=table.id,
-            status=ReservationStatus.ACTIVE,
+            status=TableReservationStatus.ACTIVE,
         )
         session.add(link)
 
@@ -257,9 +252,6 @@ def change_table_status(
             new_status=new_status,
         )
     )
-
-    if parent_reservation_id is not None:
-        cascade_parent_reservation_status(session, parent_reservation_id)
 
     session.commit()
     session.refresh(table)
@@ -338,18 +330,14 @@ def reset_tables_daily(
             select(TableReservation)
             .join(Reservation, Reservation.id == TableReservation.reservation_id)
             .where(TableReservation.table_id.in_(table_ids))
-            .where(TableReservation.status == ReservationStatus.ACTIVE)
+            .where(TableReservation.status == TableReservationStatus.ACTIVE)
             .where(Reservation.reserved_at < cutoff)
         ).all()
-        affected_parents: set[int] = set()
         for link in expirable:
-            link.status = ReservationStatus.NO_SHOW
+            link.status = TableReservationStatus.NO_SHOW
             link.updated_at = datetime.now()
             session.add(link)
-            affected_parents.add(link.reservation_id)
         reservations_expired = len(expirable)
-        for parent_id in affected_parents:
-            cascade_parent_reservation_status(session, parent_id)
 
     if table_ids and payload.close_stale_orders:
         stale_orders = session.exec(

@@ -12,6 +12,17 @@ class TableStatus(str, Enum):
 
 
 class ReservationStatus(str, Enum):
+    """Lifecycle of a customer's reservation request."""
+
+    WAITING  = "waiting"
+    ACCEPTED = "accepted"
+    REFUSED  = "refused"
+    CANCELED = "canceled"
+
+
+class TableReservationStatus(str, Enum):
+    """Lifecycle of a per-table binding (`TableReservation`)."""
+
     ACTIVE    = "active"
     HONORED   = "honored"
     CANCELLED = "cancelled"
@@ -48,7 +59,7 @@ class TableReservationPublic(SQLModel):
     id: int
     reservation_id: int
     table_id: int
-    status: ReservationStatus
+    status: TableReservationStatus
     reservation: ReservationPublic
     created_at: datetime
     updated_at: datetime

@@ -7,7 +7,6 @@ from sqlmodel import Session, exists, select
 
 from app.models.models import (
     Order,
-    Reservation,
     RestaurantTable,
     TableReservation,
     TableStatusLog,
@@ -15,16 +14,9 @@ from app.models.models import (
 )
 from app.schemas.auth_schemas import RoleName
 from app.schemas.order_shemas import OrderStatus, PaymentStatus
-from app.schemas.restaurant_table_schemas import ReservationStatus, TableStatus
+from app.schemas.restaurant_table_schemas import TableReservationStatus, TableStatus
 from app.services import permission_service
 from app.services.ws_service import ConnectionManager
-
-
-TERMINAL_RESERVATION_STATUSES = {
-    ReservationStatus.HONORED,
-    ReservationStatus.CANCELLED,
-    ReservationStatus.NO_SHOW,
-}
 
 
 _SERVER_LIKE_ROLES = {
@@ -42,7 +34,7 @@ def active_table_reservation(session: Session, table_id: int) -> Optional[TableR
     return session.exec(
         select(TableReservation)
         .where(TableReservation.table_id == table_id)
-        .where(TableReservation.status == ReservationStatus.ACTIVE)
+        .where(TableReservation.status == TableReservationStatus.ACTIVE)
     ).first()
 
 
@@ -63,36 +55,6 @@ def _current_occupancy_started_at(session: Session, table_id: int) -> datetime:
         .order_by(TableStatusLog.changed_at.desc())
     ).first()
     return row if row is not None else datetime.min
-
-
-def cascade_parent_reservation_status(
-    session: Session,
-    reservation_id: int,
-) -> None:
-    """If every TableReservation for a parent Reservation is terminal, update
-    the parent's status to match (all-honored → honored, etc.)."""
-    rows = session.exec(
-        select(TableReservation).where(TableReservation.reservation_id == reservation_id)
-    ).all()
-    if not rows:
-        return
-    statuses = {row.status for row in rows}
-    if not statuses.issubset(TERMINAL_RESERVATION_STATUSES):
-        return
-    if len(statuses) == 1:
-        new_status = next(iter(statuses))
-    elif ReservationStatus.HONORED in statuses:
-        new_status = ReservationStatus.HONORED
-    elif ReservationStatus.CANCELLED in statuses:
-        new_status = ReservationStatus.CANCELLED
-    else:
-        new_status = ReservationStatus.NO_SHOW
-
-    parent = session.get(Reservation, reservation_id)
-    if parent is not None and parent.status != new_status:
-        parent.status = new_status
-        parent.updated_at = datetime.now()
-        session.add(parent)
 
 
 def build_status_broadcast(
@@ -161,14 +123,12 @@ def maybe_auto_claim_table(
         # ASSIGNED — never reassign implicitly.
         return
 
-    parent_reservation_id: Optional[int] = None
     if old_status == TableStatus.RESERVED:
         active = active_table_reservation(session, table.id)
         if active is not None:
-            active.status = ReservationStatus.HONORED
+            active.status = TableReservationStatus.HONORED
             active.updated_at = datetime.now()
             session.add(active)
-            parent_reservation_id = active.reservation_id
 
     if target == TableStatus.ASSIGNED:
         table.server_id = current_user.id
@@ -190,9 +150,6 @@ def maybe_auto_claim_table(
             note="auto-claimed: order created",
         )
     )
-
-    if parent_reservation_id is not None:
-        cascade_parent_reservation_status(session, parent_reservation_id)
 
     session.commit()
     session.refresh(table)
@@ -241,7 +198,7 @@ def maybe_auto_release_table(
 
     active_reservation = active_table_reservation(session, table_id)
     if active_reservation is not None:
-        active_reservation.status = ReservationStatus.CANCELLED
+        active_reservation.status = TableReservationStatus.CANCELLED
         active_reservation.updated_at = datetime.now()
         session.add(active_reservation)
 

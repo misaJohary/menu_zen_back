@@ -29,6 +29,7 @@ from app.schemas.restaurant_schemas import RestaurantBase
 from app.schemas.restaurant_table_schemas import (
     ReservationStatus,
     RestaurantTableBase,
+    TableReservationStatus,
     TableStatus,
 )
 
@@ -346,7 +347,7 @@ class Reservation(SQLModel, table=True):
     name: str
     phone: str
     reserved_at: datetime
-    status: ReservationStatus = Field(default=ReservationStatus.ACTIVE)
+    status: ReservationStatus = Field(default=ReservationStatus.WAITING)
     note: Optional[str] = Field(default=None)
     created_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
     customer_id: Optional[int] = Field(
@@ -373,7 +374,7 @@ class TableReservation(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     reservation_id: int = Field(foreign_key="reservation.id")
     table_id: int = Field(foreign_key="restaurant_table.id")
-    status: ReservationStatus = Field(default=ReservationStatus.ACTIVE)
+    status: TableReservationStatus = Field(default=TableReservationStatus.ACTIVE)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
