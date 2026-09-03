@@ -73,3 +73,5 @@ def compute_open_status(
         return False, NextOpening(day=day_label, time=first.open)
 
     return False, None
+
+
