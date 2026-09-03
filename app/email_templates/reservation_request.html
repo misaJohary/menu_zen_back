@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}New reservation request — {{ restaurant_name }}{% endblock %}
+
+{% block brand_tag %}New request{% endblock %}
+
+{% block header_title %}You have a new reservation request{% endblock %}
+
+{% block header_subtitle %}
+  <p style="margin:8px 0 0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:14px; color:#52606d; line-height:1.5;">
+    A customer would like to book at <strong style="color:#0f172a;">{{ restaurant_name }}</strong>. Review the details below, then accept or refuse from your dashboard.
+  </p>
+{% endblock %}
+
+{% block body %}
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px;">
+    <tr>
+      <td style="padding:20px 24px;">
+
+        <!-- row: name -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding:0 0 4px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.06em;">
+              Customer
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 0 16px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:16px; font-weight:600; color:#0f172a;">
+              {{ customer_name }}
+            </td>
+          </tr>
+        </table>
+
+        <!-- row: phone -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding:0 0 4px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.06em;">
+              Phone
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 0 16px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:16px; color:#0f172a;">
+              <a href="tel:{{ customer_phone }}" style="color:#0f766e; text-decoration:none; font-weight:600;">{{ customer_phone }}</a>
+            </td>
+          </tr>
+        </table>
+
+        <!-- row: when -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding:0 0 4px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.06em;">
+              When
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 0 16px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:16px; font-weight:600; color:#0f172a;">
+              {{ reserved_at_display }}
+            </td>
+          </tr>
+        </table>
+
+        <!-- row: party size -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding:0 0 4px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.06em;">
+              Party size
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0{% if note %} 0 16px{% endif %}; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:16px; color:#0f172a;">
+              <span style="display:inline-block; background:#ccfbf1; color:#0f766e; padding:4px 12px; border-radius:999px; font-size:14px; font-weight:700;">
+                {{ party_size }} {% if party_size and party_size > 1 %}guests{% else %}guest{% endif %}
+              </span>
+            </td>
+          </tr>
+        </table>
+
+        {% if note %}
+        <!-- row: note -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding:0 0 4px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:12px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.06em;">
+              Note from the customer
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:15px; color:#1f2937; font-style:italic; line-height:1.5;">
+              “{{ note }}”
+            </td>
+          </tr>
+        </table>
+        {% endif %}
+
+      </td>
+    </tr>
+  </table>
+
+  <!-- CTA hint (no real link — dashboard URL not configured) -->
+  <p style="margin:0 0 16px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:14px; color:#52606d; line-height:1.6;">
+    Sign in to your Menu&nbsp;Zen dashboard to <strong style="color:#0f172a;">accept</strong> or <strong style="color:#0f172a;">refuse</strong> this reservation. The customer will be notified of your decision.
+  </p>
+
+  <p style="margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; color:#94a3b8; line-height:1.5;">
+    This message was sent automatically — please do not reply directly.
+  </p>
+{% endblock %}
