@@ -3,7 +3,7 @@ from statistics import mean
 from typing import Annotated, List, Literal, Optional, Union
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlmodel import Enum, and_, func, select
+from sqlmodel import Enum, and_, func, or_, select
 
 from app.configs.database_configs import SessionDep
 from app.cores.permissions import require_permission
@@ -195,13 +195,17 @@ def get_revenue(
     # Check if we need to return daily breakdown
     return_daily_list = days is not None
     
+    restaurant_id = current_user.restaurant_id
     orders = session.exec(
         select(Order).where(
             and_(
                 func.date(Order.created_at) >= date_start,
                 func.date(Order.created_at) <= date_end,
-                Order.server_id == current_user.id
-                #Order.order_status.in_(['completed', 'paid'])
+                or_(
+                    Order.restaurant_id == restaurant_id,
+                    Order.r_table.has(restaurant_id=restaurant_id),
+                ),
+                Order.order_status != OrderStatus.CANCELLED,
             )
         )
     ).all()
@@ -213,7 +217,7 @@ def get_revenue(
         
         for order in orders:
             order_date = order.created_at.date()
-            daily_data[order_date] += order.total_amount
+            daily_data[order_date] += (order.total_amount or 0.0)
         
         # Create list of daily revenues
         daily_revenues = [
@@ -221,7 +225,7 @@ def get_revenue(
             for order_date, revenue in sorted(daily_data.items())
         ]
         
-        total_revenue = sum(order.total_amount for order in orders)
+        total_revenue = sum((order.total_amount or 0.0) for order in orders)
         
         today = date.today()
         completed_days = [
@@ -249,7 +253,7 @@ def get_revenue(
         )
     else:
         # Return simple summary
-        revenue = sum(order.total_amount for order in orders)
+        revenue = sum((order.total_amount or 0.0) for order in orders)
         return RevenueSummary(revenue=revenue)
 
 class TopMenuItem(BaseModel):
